@@ -61,12 +61,28 @@ st.markdown("""
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     }
     
-    /* 메인 컨테이너 */
+    /* 메인 컨테이너 - 전체 너비 활용 */
     .main {
         background: #fafafa;
-        padding: 2rem;
-        max-width: 1600px;
-        margin: 0 auto;
+        padding: 1rem 2rem;
+        max-width: 100%;
+        margin: 0;
+    }
+    
+    /* Streamlit 기본 블록 패딩 제거 */
+    .block-container {
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+        padding-top: 1rem !important;
+        padding-bottom: 0rem !important;
+        max-width: 100% !important;
+    }
+    
+    /* 전체 앱 너비 최대화 */
+    section.main > div {
+        max-width: 100%;
+        padding-left: 2rem;
+        padding-right: 2rem;
     }
     
     /* 제목 스타일 */
@@ -264,15 +280,18 @@ st.markdown("""
         padding-top: 30px;
     }
     
-    /* 반응형 테이블 컨테이너 */
+    /* 반응형 테이블 컨테이너 - 전체 너비 활용 */
     .responsive-table-container {
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
         margin: 20px 0;
+        width: 100%;
+        max-width: 100%;
     }
     
     .responsive-table-container table {
         min-width: 100%;
+        width: 100%;
     }
     
     /* 클릭 가능한 셀 */
