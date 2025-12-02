@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+__MACOSX/
+
+# Project specific
+앱실행방법.txt
+*.sql
+*.xlsx
+*.zip
+neohelios-vue3-frontend/
+panstarcruise-erp-go-backend/
+간단_실행_가이드.txt
+엑셀에서_합치는_방법.txt
+독립_대시보드_앱_backup.py
+드라이버확인.py
+room-availability-dashboard.html
+ROOM_AVAILABILITY_DASHBOARD_README.md
+
