@@ -679,10 +679,10 @@ with col4:
 col5, col6, col7 = st.columns([2, 2, 1])
 
 with col5:
-    start_date = st.date_input("출항시작일", datetime(2025, 11, 1))
+    start_date = st.date_input("출항시작일", datetime.today())
 
 with col6:
-    end_date = st.date_input("출항종료일", datetime(2025, 11, 30))
+    end_date = st.date_input("출항종료일", datetime.today() + timedelta(days=30))
 
 with col7:
     st.markdown('<div style="margin-top: 28px;"></div>', unsafe_allow_html=True)
