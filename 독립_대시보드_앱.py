@@ -10,6 +10,9 @@ import pyodbc
 import pandas as pd
 from datetime import datetime, timedelta
 
+# ⚠️ set_page_config()는 반드시 첫 번째 Streamlit 명령이어야 함!
+st.set_page_config(page_title="객실 현황 대시보드", layout="wide", initial_sidebar_state="collapsed")
+
 # ============================================================
 # 📝 DB 설정 - Streamlit Secrets 사용
 # ============================================================
@@ -33,8 +36,6 @@ except Exception as e:
         'password': '',
     }
 # ============================================================
-
-st.set_page_config(page_title="객실 현황 대시보드", layout="wide", initial_sidebar_state="collapsed")
 
 # Session state 초기화 (필요시)
 st.markdown("""
