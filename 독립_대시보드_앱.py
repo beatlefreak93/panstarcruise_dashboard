@@ -6,8 +6,10 @@
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import pyodbc
 import pandas as pd
+import json
 from datetime import datetime, timedelta
 
 # ⚠️ set_page_config()는 반드시 첫 번째 Streamlit 명령이어야 함!
@@ -35,6 +37,10 @@ except Exception as e:
         'username': '',
         'password': '',
     }
+# ============================================================
+
+# ============================================================
+# JavaScript 기반 모달 (페이지 새로고침 없음)
 # ============================================================
 
 # Session state 초기화 (필요시)
@@ -714,8 +720,6 @@ if query_button:
         st.info("드라이버 설치 필요: https://go.microsoft.com/fwlink/?linkid=2249004")
         st.stop()
     
-    st.info(f"사용 중인 드라이버: {driver}")
-    
     conn_string_base = f"""
         Driver={{{driver}}};
         Server={DB_CONFIG['server']};
@@ -1020,8 +1024,9 @@ if query_button:
                 df_result['vacant_rooms'] = df_result['total_rooms'] - df_result['confirmed_rooms'] - df_result['blocked_rooms']
                 df_result['vacant_rooms'] = df_result['vacant_rooms'].clip(lower=0).astype(int)
                 
-                # 5. 날짜별 총계 계산
+                # 5. 날짜별 총계 계산 (schedule_id도 포함)
                 df_totals = df_result.groupby(['date', 'date_display', 'weekday']).agg({
+                    'schedule_id': 'first',  # 첫 번째 schedule_id 사용
                     'confirmed_rooms': 'sum',
                     'blocked_rooms': 'sum',
                     'vacant_rooms': 'sum'
@@ -1078,7 +1083,7 @@ if query_button:
                 html_table = '<div class="responsive-table-container"><table style="width:100%; border-collapse: collapse; background: white; border: 1px solid #e0e0e0;">'
                 
                 # 헤더 1행: 등급명 - Palantir 스타일 (등급 간 구분선 추가)
-                html_table += '<thead><tr><th rowspan="2" style="background: #0a0a0a; color: #ffffff; padding: 22px; border: none; border-right: 2px solid #2a2a2a; font-weight: 500; font-size: 18px; text-transform: uppercase; letter-spacing: 1px;">Date</th>'
+                html_table += '<thead><tr><th rowspan="2" class="sticky-date-header" style="background: #0a0a0a; color: #ffffff; padding: 22px; border: none; border-right: 2px solid #2a2a2a; font-weight: 500; font-size: 18px; text-transform: uppercase; letter-spacing: 1px;">Date</th>'
                 for idx, grade in enumerate(existing_grades):
                     if grade == '총계':
                         bg_color = '#1a1a1a'
@@ -1111,26 +1116,44 @@ if query_button:
                 for idx, row in final_df.iterrows():
                     # 교차 행 배경 - 더 subtle하게
                     row_bg = '#ffffff' if idx % 2 == 0 else '#fafafa'
-                    schedule_id = row.get('schedule_id', 0)
+                    # schedule_id NaN 처리
+                    schedule_id_raw = row.get('schedule_id', 0)
+                    schedule_id = int(schedule_id_raw) if pd.notna(schedule_id_raw) else 0
                     date_raw = row.get('date_raw', '')
                     
                     html_table += '<tr style="border-bottom: 1px solid #efefef; transition: background 0.2s ease;">'
-                    html_table += f'<td style="background: {row_bg}; color: #0a0a0a; font-weight: 500; padding: 22px; border: none; border-right: 2px solid #d0d0d0; font-size: 17px;">{row["날짜"]}</td>'
+                    html_table += f'<td class="sticky-date-cell" style="background: {row_bg}; color: #0a0a0a; font-weight: 500; padding: 22px; border: none; border-right: 2px solid #d0d0d0; font-size: 17px;">{row["날짜"]}</td>'
                     
-                    for idx, grade in enumerate(existing_grades):
+                    for grade_idx, grade in enumerate(existing_grades):
                         confirmed = int(row.get(f'{grade}_확정', 0))
                         blocked = int(row.get(f'{grade}_블록', 0))
                         vacant = int(row.get(f'{grade}_공실', 0))
+                        date_display = row['날짜']
                         
                         # 등급 간 구분선 (각 등급의 공실 컬럼 오른쪽)
-                        is_last_grade = (idx == len(existing_grades) - 1)
+                        is_last_grade = (grade_idx == len(existing_grades) - 1)
                         grade_separator = '1px solid #efefef' if is_last_grade else '2px solid #d0d0d0'
                         
+                        # 클릭 가능 여부 (총계는 클릭 불가, schedule_id가 없으면 불가)
+                        is_clickable = grade != '총계' and schedule_id > 0
+                        
+                        if is_clickable:
+                            # JavaScript onclick으로 모달 표시 (페이지 새로고침 없음!)
+                            confirmed_link = f'<span onclick="openRoomModal({schedule_id}, \'{date_display}\', \'{grade}\', \'확정\')" style="cursor: pointer; display: block;" title="클릭하여 상세보기">{confirmed}</span>'
+                            blocked_link = f'<span onclick="openRoomModal({schedule_id}, \'{date_display}\', \'{grade}\', \'블록\')" style="cursor: pointer; display: block;" title="클릭하여 상세보기">{blocked}</span>'
+                            vacant_link = f'<span onclick="openRoomModal({schedule_id}, \'{date_display}\', \'{grade}\', \'공실\')" style="cursor: pointer; display: block;" title="클릭하여 상세보기">{vacant}</span>'
+                            cell_class = 'class="clickable-cell"'
+                        else:
+                            confirmed_link = str(confirmed)
+                            blocked_link = str(blocked)
+                            vacant_link = str(vacant)
+                            cell_class = ''
+                        
                         # 확정: 다크 컬러
-                        html_table += f'<td style="background: {row_bg}; color: #0a0a0a; text-align: center; padding: 20px; font-weight: 600; border: none; border-right: 1px solid #efefef; font-size: 18px;">{confirmed}</td>'
+                        html_table += f'<td {cell_class} style="background: {row_bg}; color: #0a0a0a; text-align: center; padding: 20px; font-weight: 600; border: none; border-right: 1px solid #efefef; font-size: 18px;">{confirmed_link}</td>'
                         
                         # 블록: 그레이 톤
-                        html_table += f'<td style="background: {row_bg}; color: #6b6b6b; text-align: center; padding: 20px; font-weight: 500; border: none; border-right: 1px solid #efefef; font-size: 18px;">{blocked}</td>'
+                        html_table += f'<td {cell_class} style="background: {row_bg}; color: #6b6b6b; text-align: center; padding: 20px; font-weight: 500; border: none; border-right: 1px solid #efefef; font-size: 18px;">{blocked_link}</td>'
                         
                         # 공실: 옅은 노란색 배경, 0이면 예약불가 강조, 등급 간 구분선
                         if vacant == 0:
@@ -1141,7 +1164,7 @@ if query_button:
                             yellow_bg = '#fffef5' if row_bg == '#ffffff' else '#fffdf0'
                             vacant_style = f'background: {yellow_bg}; color: #1565c0; text-align: center; padding: 20px; font-weight: 600; border: none; border-right: {grade_separator}; font-size: 18px;'
                         
-                        html_table += f'<td style="{vacant_style}">{vacant}</td>'
+                        html_table += f'<td {cell_class} style="{vacant_style}">{vacant_link}</td>'
                     
                     html_table += '</tr>'
                 html_table += '</tbody></table></div>'
@@ -1189,6 +1212,9 @@ if query_button:
                 
                 final_df_passengers = pd.DataFrame(pass_result_rows)
                 
+                # 객실 상세 데이터 병합 (확정/블록 + 공실)
+                df_all_room_details = pd.concat([df_room_details, df_vacant_rooms], ignore_index=True)
+                
                 # 조회 결과를 session_state에 저장
                 st.session_state.query_result = {
                     'html_table': html_table,
@@ -1197,7 +1223,8 @@ if query_button:
                     'existing_grades': existing_grades,
                     'start_date': str(start_date),
                     'end_date': str(end_date),
-                    'vessel_name': vessel_name
+                    'vessel_name': vessel_name,
+                    'room_details': df_all_room_details.to_dict('records')  # 모달용 데이터
                 }
                 
                 st.success("조회 완료")
@@ -1214,8 +1241,205 @@ if 'query_result' in st.session_state:
     tab1, tab2 = st.tabs(["객실", "승객"])
     
     with tab1:
-        # 객실 테이블 렌더링
-        st.markdown(result['html_table'], unsafe_allow_html=True)
+        # 객실 테이블 렌더링 (JavaScript 모달 포함)
+        room_data_json = json.dumps(result.get('room_details', []), ensure_ascii=False)
+        
+        # 테이블 + 모달 + JavaScript를 하나의 HTML로 합침
+        full_html = f'''
+        <style>
+            /* 모달 오버레이 */
+            #js-modal-overlay {{
+                display: none;
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                background: rgba(0, 0, 0, 0.75);
+                z-index: 999998;
+            }}
+            #js-modal-overlay.show {{
+                display: flex;
+                justify-content: center;
+                align-items: flex-start;
+                padding-top: 20px;
+            }}
+            
+            /* 모달 박스 - 크기 확대 */
+            #js-modal-box {{
+                background: white;
+                border-radius: 12px;
+                width: 95%;
+                max-width: 800px;
+                max-height: 90vh;
+                overflow: hidden;
+                box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5);
+            }}
+            
+            /* 모달 헤더 */
+            #js-modal-header {{
+                background: #1a1a1a;
+                color: white;
+                padding: 22px 28px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }}
+            #js-modal-header h3 {{
+                margin: 0;
+                font-size: 20px;
+                font-weight: 600;
+            }}
+            #js-modal-close {{
+                background: none;
+                border: none;
+                color: white;
+                font-size: 32px;
+                cursor: pointer;
+                padding: 0 8px;
+                line-height: 1;
+            }}
+            #js-modal-close:hover {{
+                color: #ff6b6b;
+            }}
+            
+            /* 모달 바디 - 크기 확대 */
+            #js-modal-body {{
+                padding: 28px;
+                max-height: 70vh;
+                overflow-y: auto;
+            }}
+            #js-modal-body table {{
+                width: 100%;
+                border-collapse: collapse;
+            }}
+            #js-modal-body th {{
+                background: #f5f5f5;
+                padding: 14px 16px;
+                border: 1px solid #ddd;
+                text-align: center;
+                font-weight: 600;
+                font-size: 16px;
+            }}
+            #js-modal-body td {{
+                padding: 12px 16px;
+                border: 1px solid #ddd;
+                text-align: center;
+                font-size: 16px;
+            }}
+            #js-modal-body tr:nth-child(even) {{
+                background: #fafafa;
+            }}
+            #js-modal-body tr:hover {{
+                background: #f0f0f0;
+            }}
+            
+            /* 클릭 가능 셀 */
+            .clickable-cell:hover {{
+                background: #f0f0f0 !important;
+                cursor: pointer;
+            }}
+            
+            /* 모바일 가로 스크롤 */
+            .responsive-table-container {{
+                width: 100%;
+                overflow-x: auto;
+                overflow-y: auto;
+                max-height: calc(100vh - 100px);
+                -webkit-overflow-scrolling: touch;
+            }}
+            
+            /* 헤더 고정 (상하 스크롤 시) */
+            .responsive-table-container thead th {{
+                position: sticky;
+                top: 0;
+                z-index: 10;
+            }}
+            .responsive-table-container thead tr:first-child th {{
+                top: 0;
+            }}
+            .responsive-table-container thead tr:nth-child(2) th {{
+                top: 60px;
+            }}
+            
+            /* 첫 번째 열 고정 (좌우 스크롤 시) */
+            .sticky-date-header {{
+                position: sticky !important;
+                left: 0 !important;
+                z-index: 20 !important;
+                background: #0a0a0a !important;
+            }}
+            .sticky-date-cell {{
+                position: sticky !important;
+                left: 0 !important;
+                z-index: 5 !important;
+            }}
+        </style>
+        
+        <!-- 테이블 -->
+        {result['html_table']}
+        
+        <!-- 모달 HTML -->
+        <div id="js-modal-overlay" onclick="if(event.target.id==='js-modal-overlay') closeRoomModal()">
+            <div id="js-modal-box">
+                <div id="js-modal-header">
+                    <h3 id="js-modal-title">객실 상세</h3>
+                    <button id="js-modal-close" onclick="closeRoomModal()">&times;</button>
+                </div>
+                <div id="js-modal-body">
+                    <p>로딩 중...</p>
+                </div>
+            </div>
+        </div>
+        
+        <script>
+            // 객실 상세 데이터
+            const roomData = {room_data_json};
+            
+            // 모달 열기
+            function openRoomModal(scheduleId, dateStr, grade, status) {{
+                const filtered = roomData.filter(r => 
+                    r.schedule_id == scheduleId && 
+                    r.grade === grade && 
+                    r.status === status
+                );
+                
+                document.getElementById('js-modal-title').textContent = dateStr + ' | ' + grade + ' | ' + status;
+                
+                let html = '';
+                if (filtered.length > 0) {{
+                    html = '<table><tr><th>순번</th><th>객실등급</th><th>객실번호</th></tr>';
+                    filtered.forEach((room, idx) => {{
+                        html += '<tr><td>' + (idx + 1) + '</td><td>' + room.grade + '</td><td>' + room.room_no + '</td></tr>';
+                    }});
+                    html += '</table>';
+                }} else {{
+                    html = '<p style="text-align:center; color:#666; padding:30px;">해당 조건의 객실이 없습니다.</p>';
+                }}
+                
+                document.getElementById('js-modal-body').innerHTML = html;
+                document.getElementById('js-modal-overlay').classList.add('show');
+            }}
+            
+            // 모달 닫기
+            function closeRoomModal() {{
+                document.getElementById('js-modal-overlay').classList.remove('show');
+            }}
+            
+            // ESC 키로 닫기
+            document.addEventListener('keydown', function(e) {{
+                if (e.key === 'Escape') closeRoomModal();
+            }});
+        </script>
+        '''
+        
+        # 테이블 행 수에 따라 높이 계산 (세로는 전체 표시, 가로는 스크롤 가능)
+        row_count = len(result.get('final_df', []))
+        # 헤더 2행 (약 120px) + 각 데이터 행 (약 65px) + 모달 여유 공간 (500px)
+        table_height = 200 + row_count * 65 + 500
+        
+        # scrolling=True로 모바일 가로 스크롤 허용
+        components.html(full_html, height=table_height, scrolling=True)
         
         # 범례 - 객실용
         st.markdown("""
