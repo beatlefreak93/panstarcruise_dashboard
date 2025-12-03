@@ -1035,7 +1035,7 @@ if query_button:
                 df_with_totals['날짜'] = df_with_totals['date_display'] + ' (' + df_with_totals['weekday'] + ')'
                 
                 # 8. 등급 순서 정의 (총계를 먼저, 모든 등급 포함)
-                grade_order = ['총계', 'BS', 'OC', 'IC', 'RS', 'GR', 'PR', 'OR', 'DA']
+                grade_order = ['총계', 'OR', 'PR', 'RS', 'BS', 'OC', 'IC', 'DA']
                 existing_grades = [g for g in grade_order if g in df_with_totals['grade'].unique()]
                 
                 # 9. 날짜별로 한 행씩 구성 (schedule_id 포함)
@@ -1132,9 +1132,9 @@ if query_button:
                         # 블록: 그레이 톤
                         html_table += f'<td style="background: {row_bg}; color: #6b6b6b; text-align: center; padding: 20px; font-weight: 500; border: none; border-right: 1px solid #efefef; font-size: 18px;">{blocked}</td>'
                         
-                        # 공실: 옅은 노란색 배경, 3 미만일 때 강조, 등급 간 구분선
-                        if vacant < 3 and vacant > 0:
-                            # 긴급 상황 - 빨간색 강조
+                        # 공실: 옅은 노란색 배경, 0이면 예약불가 강조, 등급 간 구분선
+                        if vacant == 0:
+                            # 예약 불가 - 빨간색 강조
                             vacant_style = f'background: #fff5f5; color: #c62828; text-align: center; padding: 20px; font-weight: 700; border: none; border-right: {grade_separator}; border-left: 3px solid #ef5350; font-size: 19px;'
                         else:
                             # 일반 공실 - 옅은 노란색 배경
@@ -1236,7 +1236,7 @@ if 'query_result' in st.session_state:
                 </div>
                 <div style="display: flex; align-items: center;">
                     <span style="display: inline-block; width: 28px; height: 28px; background: #c62828; border-radius: 1px; margin-right: 14px;"></span>
-                    <span style="color: #c62828; font-size: 16px; font-weight: 600;">긴급 (공실 3개 미만 주의)</span>
+                    <span style="color: #c62828; font-size: 16px; font-weight: 600;">예약불가 (공실 0개)</span>
                 </div>
             </div>
         </div>
