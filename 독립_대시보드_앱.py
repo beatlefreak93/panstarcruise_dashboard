@@ -958,8 +958,8 @@ if query_button:
                         grade,
                         room_number AS room_no,
                         CASE 
-                            WHEN has_confirmed = 1 THEN '확정'
-                            WHEN has_blocked = 1 THEN '블록'
+                            WHEN has_confirmed = 1 THEN 'confirmed'
+                            WHEN has_blocked = 1 THEN 'blocked'
                         END AS status
                     FROM room_status
                     WHERE grade IS NOT NULL
@@ -994,7 +994,7 @@ if query_button:
                     ORDER BY schedule_id, grade, room_number
                 """
                 df_vacant_rooms = pd.read_sql(vacant_rooms_query, conn_cruise)
-                df_vacant_rooms['status'] = '공실'
+                df_vacant_rooms['status'] = 'vacant'
                 
                 conn_cruise.close()
                 
@@ -1139,9 +1139,10 @@ if query_button:
                         
                         if is_clickable:
                             # JavaScript onclick으로 모달 표시 (페이지 새로고침 없음!)
-                            confirmed_link = f'<span onclick="openRoomModal({schedule_id}, \'{date_display}\', \'{grade}\', \'확정\')" style="cursor: pointer; display: block;" title="클릭하여 상세보기">{confirmed}</span>'
-                            blocked_link = f'<span onclick="openRoomModal({schedule_id}, \'{date_display}\', \'{grade}\', \'블록\')" style="cursor: pointer; display: block;" title="클릭하여 상세보기">{blocked}</span>'
-                            vacant_link = f'<span onclick="openRoomModal({schedule_id}, \'{date_display}\', \'{grade}\', \'공실\')" style="cursor: pointer; display: block;" title="클릭하여 상세보기">{vacant}</span>'
+                            # status는 영어로 전달 (인코딩 문제 방지)
+                            confirmed_link = f'<span onclick="openRoomModal({schedule_id}, \'{date_display}\', \'{grade}\', \'confirmed\')" style="cursor: pointer; display: block;" title="클릭하여 상세보기">{confirmed}</span>'
+                            blocked_link = f'<span onclick="openRoomModal({schedule_id}, \'{date_display}\', \'{grade}\', \'blocked\')" style="cursor: pointer; display: block;" title="클릭하여 상세보기">{blocked}</span>'
+                            vacant_link = f'<span onclick="openRoomModal({schedule_id}, \'{date_display}\', \'{grade}\', \'vacant\')" style="cursor: pointer; display: block;" title="클릭하여 상세보기">{vacant}</span>'
                             cell_class = 'class="clickable-cell"'
                         else:
                             confirmed_link = str(confirmed)
@@ -1213,6 +1214,9 @@ if query_button:
                 final_df_passengers = pd.DataFrame(pass_result_rows)
                 
                 # 객실 상세 데이터 병합 (확정/블록 + 공실)
+                # schedule_id 타입 통일 (정수형)
+                df_room_details['schedule_id'] = df_room_details['schedule_id'].astype(int)
+                df_vacant_rooms['schedule_id'] = df_vacant_rooms['schedule_id'].astype(int)
                 df_all_room_details = pd.concat([df_room_details, df_vacant_rooms], ignore_index=True)
                 
                 # 조회 결과를 session_state에 저장
@@ -1246,6 +1250,7 @@ if 'query_result' in st.session_state:
         
         # 테이블 + 모달 + JavaScript를 하나의 HTML로 합침
         full_html = f'''
+        <meta charset="UTF-8">
         <style>
             /* 모달 오버레이 */
             #js-modal-overlay {{
@@ -1396,15 +1401,47 @@ if 'query_result' in st.session_state:
             // 객실 상세 데이터
             const roomData = {room_data_json};
             
+            // 디버깅용 로그 - status 분포 확인
+            console.log('=== roomData 디버깅 ===');
+            console.log('총 개수:', roomData.length);
+            const statusCount = {{}};
+            roomData.forEach(r => {{
+                statusCount[r.status] = (statusCount[r.status] || 0) + 1;
+            }});
+            console.log('status 분포:', statusCount);
+            console.log('샘플 (처음 10개):', roomData.slice(0, 10));
+            
+            // status 영어 -> 한글 변환
+            const statusMap = {{
+                'confirmed': '확정',
+                'blocked': '블록',
+                'vacant': '공실'
+            }};
+            
             // 모달 열기
             function openRoomModal(scheduleId, dateStr, grade, status) {{
+                console.log('=== 클릭 이벤트 ===');
+                console.log('scheduleId:', scheduleId, typeof scheduleId);
+                console.log('grade:', grade);
+                console.log('status:', status);
+                
+                // 해당 schedule_id의 모든 데이터 확인
+                const sameSchedule = roomData.filter(r => String(r.schedule_id) === String(scheduleId));
+                console.log('같은 schedule_id 데이터:', sameSchedule.length, '개');
+                console.log('같은 schedule_id의 status들:', [...new Set(sameSchedule.map(r => r.status))]);
+                
+                // 타입 안전한 비교 (문자열로 변환하여 비교)
                 const filtered = roomData.filter(r => 
-                    r.schedule_id == scheduleId && 
+                    String(r.schedule_id) === String(scheduleId) && 
                     r.grade === grade && 
                     r.status === status
                 );
                 
-                document.getElementById('js-modal-title').textContent = dateStr + ' | ' + grade + ' | ' + status;
+                console.log('최종 필터 결과:', filtered.length, '개');
+                
+                // 제목에는 한글로 표시
+                const statusKo = statusMap[status] || status;
+                document.getElementById('js-modal-title').textContent = dateStr + ' | ' + grade + ' | ' + statusKo;
                 
                 let html = '';
                 if (filtered.length > 0) {{
