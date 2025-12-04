@@ -15,7 +15,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # set_page_config는 반드시 첫 번째 Streamlit 명령이어야 함
-st.set_page_config(page_title="여객 현황 대시보드", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="여객 현황 대시보드", page_icon="favicon.svg", layout="wide", initial_sidebar_state="collapsed")
 
 # DB 설정
 try:
@@ -846,21 +846,21 @@ if query_button:
             if is_tsl:
                 # TSL: 모든 스케줄 가져오기 (port 정보 포함)
                 schedule_query = f"""
-                    SELECT 
-                        cs.id AS schedule_id,
-                        CONVERT(VARCHAR, cs.etd, 23) AS etd_date,
+                SELECT 
+                    cs.id AS schedule_id,
+                    CONVERT(VARCHAR, cs.etd, 23) AS etd_date,
                         CONVERT(VARCHAR, cs.etd, 108) AS etd_time,
                         voy.route_id,
                         voy.direction,
                         ps.port_id AS departure_port_id
-                    FROM coastal_schedules cs
-                    LEFT JOIN proforma_schedules ps ON cs.proforma_schedule_id = ps.id
-                    LEFT JOIN voyages voy ON ps.voyage_id = voy.id
-                    WHERE voy.route_id = {selected_route_id}
-                      AND CAST(cs.etd AS DATE) BETWEEN '{start_date}' AND '{end_date}'
-                      AND cs.deleted_at IS NULL
-                      AND cs.is_cruise_available = 1
-                    ORDER BY cs.etd
+                FROM coastal_schedules cs
+                LEFT JOIN proforma_schedules ps ON cs.proforma_schedule_id = ps.id
+                LEFT JOIN voyages voy ON ps.voyage_id = voy.id
+                WHERE voy.route_id = {selected_route_id}
+                  AND CAST(cs.etd AS DATE) BETWEEN '{start_date}' AND '{end_date}'
+                  AND cs.deleted_at IS NULL
+                  AND cs.is_cruise_available = 1
+                ORDER BY cs.etd
                 """
                 df_schedules = pd.read_sql(schedule_query, conn_base)
             else:
@@ -1021,46 +1021,46 @@ if query_button:
                 else:
                     # PSMC: 객실 기반 - on_boarding_room_id로 객실 연결
                     booking_query = f"""
-                        WITH room_status AS (
-                            SELECT 
-                                t.departure_schedule_id,
-                                t.on_boarding_room_id,
-                                g.code AS grade,
-                                MAX(CASE 
-                                    WHEN t.is_temporary = 0 
-                                         AND t.status NOT LIKE 'REFUND%'
-                                    THEN 1 
-                                    ELSE 0 
-                                END) AS has_confirmed,
-                                MAX(CASE 
-                                    WHEN t.is_temporary = 1 
-                                         AND t.status NOT LIKE 'REFUND%'
-                                    THEN 1 
-                                    ELSE 0 
-                                END) AS has_blocked
-                            FROM tickets t
-                            INNER JOIN rooms r ON t.on_boarding_room_id = r.id
-                            INNER JOIN grades g ON r.grade_id = g.id
+                    WITH room_status AS (
+                        SELECT 
+                            t.departure_schedule_id,
+                            t.on_boarding_room_id,
+                            g.code AS grade,
+                            MAX(CASE 
+                                WHEN t.is_temporary = 0 
+                                     AND t.status NOT LIKE 'REFUND%'
+                                THEN 1 
+                                ELSE 0 
+                            END) AS has_confirmed,
+                            MAX(CASE 
+                                WHEN t.is_temporary = 1 
+                                     AND t.status NOT LIKE 'REFUND%'
+                                THEN 1 
+                                ELSE 0 
+                            END) AS has_blocked
+                        FROM tickets t
+                        INNER JOIN rooms r ON t.on_boarding_room_id = r.id
+                        INNER JOIN grades g ON r.grade_id = g.id
                             {tsl_arrival_join}
-                            WHERE t.departure_schedule_id IN ({schedule_ids})
-                              AND t.deleted_at IS NULL
-                              AND r.deleted_at IS NULL
-                              AND g.deleted_at IS NULL
-                              AND t.on_boarding_room_id IS NOT NULL
-                              AND t.status NOT LIKE 'REFUND%'
+                        WHERE t.departure_schedule_id IN ({schedule_ids})
+                          AND t.deleted_at IS NULL
+                          AND r.deleted_at IS NULL
+                          AND g.deleted_at IS NULL
+                          AND t.on_boarding_room_id IS NOT NULL
+                          AND t.status NOT LIKE 'REFUND%'
                               {tsl_arrival_filter}
                               {origin_country_filter}
-                            GROUP BY t.departure_schedule_id, t.on_boarding_room_id, g.code
-                        )
-                        SELECT 
-                            departure_schedule_id AS schedule_id,
-                            grade,
-                            COUNT(CASE WHEN has_confirmed = 1 THEN 1 END) AS confirmed_rooms,
-                            COUNT(CASE WHEN has_confirmed = 0 AND has_blocked = 1 THEN 1 END) AS blocked_rooms
-                        FROM room_status
-                        WHERE grade IS NOT NULL
-                        GROUP BY departure_schedule_id, grade
-                    """
+                        GROUP BY t.departure_schedule_id, t.on_boarding_room_id, g.code
+                    )
+                    SELECT 
+                        departure_schedule_id AS schedule_id,
+                        grade,
+                        COUNT(CASE WHEN has_confirmed = 1 THEN 1 END) AS confirmed_rooms,
+                        COUNT(CASE WHEN has_confirmed = 0 AND has_blocked = 1 THEN 1 END) AS blocked_rooms
+                    FROM room_status
+                    WHERE grade IS NOT NULL
+                    GROUP BY departure_schedule_id, grade
+                """
                 df_bookings = pd.read_sql(booking_query, conn_cruise)
                 
                 # 3-1. 승객 수 조회 (티켓 수 기반)
@@ -1296,6 +1296,87 @@ if query_button:
                       {tsl_arrival_filter}
                 """
                 df_passenger_analysis = pd.read_sql(passenger_analysis_query, conn_cruise)
+                
+                # 매출 분석 쿼리: 운임(정가×할인율) + 세금 + 부가서비스 (백엔드 로직과 동일)
+                revenue_analysis_query = f"""
+                    -- 1. 운임: grade_price_detail_by_age_groups 정가 × 할인율 (개인할인 + 쿠폰)
+                    SELECT 
+                        t.departure_schedule_id AS schedule_id,
+                        t.ticket_number,
+                        'GRADE_PRICE' AS payment_item,
+                        CASE 
+                            WHEN t.ticket_number LIKE 'K%' THEN gpdag.price_krw
+                            ELSE gpdag.price_jpy
+                        END 
+                        * (1.0 - ISNULL(pdd.rate, 0) / 100.0)
+                        * (1.0 - ISNULL(c.discount_rate, 0) / 100.0) AS amount,
+                        CASE WHEN t.ticket_number LIKE 'K%' THEN 1 ELSE 2 END AS currency_id,
+                        ISNULL(t.is_grade_price_refunded, 0) AS is_refunded,
+                        COALESCE(room_g.code, gp_g.code) AS grade_code
+                    FROM tickets t
+                    INNER JOIN grade_price_detail_by_age_groups gpdag 
+                        ON t.original_grade_price_detail_by_age_group_id = gpdag.id
+                    INNER JOIN grade_price_details gpd ON gpdag.grade_price_detail_id = gpd.id
+                    INNER JOIN grade_prices gp ON gpd.grade_price_id = gp.id
+                    LEFT JOIN grades gp_g ON gp.grade_id = gp_g.id
+                    LEFT JOIN rooms r ON t.on_boarding_room_id = r.id
+                    LEFT JOIN grades room_g ON r.grade_id = room_g.id
+                    LEFT JOIN personal_discount_details pdd 
+                        ON t.personal_discount_detail_id = pdd.id
+                    LEFT JOIN coupons c 
+                        ON t.coupon_id = c.id
+                    WHERE t.departure_schedule_id IN ({schedule_ids})
+                      AND t.is_temporary = 0
+                      AND t.deleted_at IS NULL
+                      AND ISNULL(t.is_grade_price_applied, 0) = 1
+                      {tsl_arrival_filter}
+                    
+                    UNION ALL
+                    
+                    -- 2. 세금: ticket_taxes → tax_by_ages
+                    SELECT 
+                        t.departure_schedule_id AS schedule_id,
+                        t.ticket_number,
+                        tax.code AS payment_item,
+                        tba.price AS amount,
+                        tba.currency_id,
+                        ISNULL(tt.is_refunded, 0) AS is_refunded,
+                        NULL AS grade_code
+                    FROM tickets t
+                    INNER JOIN ticket_taxes tt ON t.id = tt.ticket_id
+                    INNER JOIN tax_by_ages tba ON tt.tax_by_age_id = tba.id
+                    INNER JOIN taxes tax ON tba.tax_id = tax.id
+                    WHERE t.departure_schedule_id IN ({schedule_ids})
+                      AND t.is_temporary = 0
+                      AND t.deleted_at IS NULL
+                      AND tt.deleted_at IS NULL
+                      {tsl_arrival_filter}
+                    
+                    UNION ALL
+                    
+                    -- 3. 부가서비스: ticket_additional_services → additional_service_by_ages
+                    SELECT 
+                        t.departure_schedule_id AS schedule_id,
+                        t.ticket_number,
+                        'ADDITIONAL_SERVICE' AS payment_item,
+                        CASE 
+                            WHEN t.ticket_number LIKE 'K%' THEN asba.price_krw
+                            ELSE asba.price_jpy
+                        END AS amount,
+                        CASE WHEN t.ticket_number LIKE 'K%' THEN 1 ELSE 2 END AS currency_id,
+                        ISNULL(tas.is_refunded, 0) AS is_refunded,
+                        NULL AS grade_code
+                    FROM tickets t
+                    INNER JOIN ticket_additional_services tas ON t.id = tas.ticket_id
+                    INNER JOIN additional_service_by_ages asba 
+                        ON tas.additional_service_by_age_id = asba.id
+                    WHERE t.departure_schedule_id IN ({schedule_ids})
+                      AND t.is_temporary = 0
+                      AND t.deleted_at IS NULL
+                      AND tas.deleted_at IS NULL
+                      {tsl_arrival_filter}
+                """
+                df_revenue_analysis = pd.read_sql(revenue_analysis_query, conn_cruise)
                 
                 conn_cruise.close()
                 
@@ -1649,7 +1730,8 @@ if query_button:
                     'room_details': df_all_room_details.to_dict('records'),  # 모달용 데이터
                     'is_seat_based': is_seat_based,  # PSTL/PSGR 좌석 기반 여부
                     'passenger_analysis': df_passenger_analysis,  # 승객 분석 데이터
-                    'schedules': df_schedules  # 스케줄 데이터 (생성처별 분석용)
+                    'schedules': df_schedules,  # 스케줄 데이터 (생성처별 분석용)
+                    'revenue_analysis': df_revenue_analysis  # 매출 분석 데이터
                 }
                 
                 st.success("조회 완료")
@@ -2013,8 +2095,9 @@ if 'query_result' in st.session_state:
     if 'selected_tab' not in st.session_state:
         st.session_state.selected_tab = tab1_name
     
-    # 탭 옵션
+    # 탭 옵션 (매출 분석은 개발 중으로 숨김 처리)
     tab_options = [tab1_name, "승객", "📊 승객 분석", "📍 생성처별 분석"]
+    # tab_options = [tab1_name, "승객", "📊 승객 분석", "📍 생성처별 분석", "💰 매출 분석"]  # 매출 분석 포함 버전
     
     # 현재 선택된 탭이 옵션에 없으면 기본값으로
     if st.session_state.selected_tab not in tab_options:
@@ -2326,25 +2409,25 @@ if 'query_result' in st.session_state:
         <div style="margin-top: 24px; padding: 20px; background: #FFFFFF; border-radius: 5px; border: 1px solid #DAE0E3; font-family: 'Noto Sans KR', sans-serif;">
             <div style="color: #232A5E; font-weight: 700; font-size: 12px; margin-bottom: 16px; letter-spacing: -0.5px;">범례</div>
             <div class="legend-container" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">
-                <div style="display: flex; align-items: center;">
+                        <div style="display: flex; align-items: center;">
                     <span style="display: inline-block; width: 20px; height: 20px; background: #0E0E2C; border-radius: 3px; margin-right: 10px;"></span>
                     <span style="color: #0E0E2C; font-size: 14px; font-weight: 500;">확정 (명단 입력 완료)</span>
-                </div>
-                <div style="display: flex; align-items: center;">
+                        </div>
+                        <div style="display: flex; align-items: center;">
                     <span style="display: inline-block; width: 20px; height: 20px; background: #88949C; border-radius: 3px; margin-right: 10px;"></span>
                     <span style="color: #88949C; font-size: 14px; font-weight: 500;">블록 (점유 상태)</span>
-                </div>
-                <div style="display: flex; align-items: center;">
+                        </div>
+                        <div style="display: flex; align-items: center;">
                     <span style="display: inline-block; width: 20px; height: 20px; background: #FFFBEB; border: 1px solid #436CFC; border-radius: 3px; margin-right: 10px;"></span>
                     <span style="color: #436CFC; font-size: 14px; font-weight: 500;">공실 (예약 가능)</span>
-                </div>
-                <div style="display: flex; align-items: center;">
+                        </div>
+                        <div style="display: flex; align-items: center;">
                     <span style="display: inline-block; width: 20px; height: 20px; background: #EA3336; border-radius: 3px; margin-right: 10px;"></span>
                     <span style="color: #EA3336; font-size: 14px; font-weight: 700;">예약불가 (공실 0개)</span>
+                        </div>
+                    </div>
                 </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
                 
     elif selected_tab == "승객":
         # 승객 테이블 생성
@@ -2800,12 +2883,28 @@ if 'query_result' in st.session_state:
             
             df_origin['nationality_group'] = df_origin['nationality'].apply(get_nationality_group)
             
-            # 도착 포트 계산 - direction 기반으로 통일 (더 안정적)
+            # 도착 포트 계산
+            # TSL 항로: arrival_schedule_id의 port_id로 도착지 결정
+            # 기타 항로: direction 기반으로 결정
             route_ports_info = route_direction_map.get(selected_route, {'first': '-', 'second': '-'})
             first_port = route_ports_info.get('first', '-')
             second_port = route_ports_info.get('second', '-')
             
-            if not df_schedules.empty and 'direction' in df_schedules.columns:
+            is_tsl_route = selected_route == 'TSL'
+            
+            if is_tsl_route and not df_schedules.empty and 'arrival_schedule_id' in df_origin.columns:
+                # TSL: arrival_schedule_id로 도착 포트 매핑
+                # df_schedules에서 schedule_id → departure_port 매핑 (schedule의 port가 해당 스케줄의 출발/도착지)
+                schedule_port_map = df_schedules.set_index('schedule_id')['departure_port'].to_dict()
+                
+                # arrival_schedule_id를 int로 변환 (NaN은 -1로)
+                df_origin['arrival_schedule_id_int'] = pd.to_numeric(df_origin['arrival_schedule_id'], errors='coerce').fillna(-1).astype(int)
+                
+                # arrival_schedule_id의 departure_port가 곧 도착지
+                df_origin['arrival_port'] = df_origin['arrival_schedule_id_int'].map(schedule_port_map)
+                df_origin['arrival_port'] = df_origin['arrival_port'].fillna('-')
+            elif not df_schedules.empty and 'direction' in df_schedules.columns:
+                # 기타 항로: direction 기반
                 schedule_direction_map = df_schedules.set_index('schedule_id')['direction'].to_dict()
                 df_origin['direction'] = df_origin['schedule_id'].map(schedule_direction_map)
                 
@@ -2909,6 +3008,310 @@ if 'query_result' in st.session_state:
                 st.markdown(html_origin, unsafe_allow_html=True)
             else:
                 st.warning("스케줄 정보를 찾을 수 없습니다.")
+
+    elif selected_tab == "💰 매출 분석":
+        # 매출 분석 탭
+        df_revenue = result.get('revenue_analysis', pd.DataFrame())
+        df_schedules = result.get('schedules', pd.DataFrame())
+        
+        if df_revenue.empty:
+            st.info("매출 데이터가 없습니다.")
+        else:
+            # 헤더
+            st.markdown("""
+            <div style="background: #232A5E; padding: 24px; border-radius: 5px; margin-bottom: 24px; font-family: 'Noto Sans KR', sans-serif;">
+                <h2 style="color: #FAFCFE; margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.5px;">
+                    💰 매출 분석
+                </h2>
+                <p style="color: #9EA8B0; margin: 8px 0 0 0; font-size: 14px; letter-spacing: -0.5px;">
+                    스케줄별 매출 현황 (운임/세금/부가서비스)
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # 생성처 필터
+            rev_filter_col, _ = st.columns([2, 8])
+            with rev_filter_col:
+                rev_origin_options = ["전체", "한국", "일본"]
+                selected_rev_origin = st.selectbox("생성처", rev_origin_options, index=0, key="origin_filter_revenue")
+            
+            # 생성처 분류 함수
+            def get_origin_rev(ticket_number):
+                if pd.isna(ticket_number) or not ticket_number:
+                    return '기타'
+                first_char = str(ticket_number)[0].upper()
+                if first_char == 'K':
+                    return '한국'
+                elif first_char == 'J':
+                    return '일본'
+                else:
+                    return '기타'
+            
+            # 생성처 컬럼 추가
+            df_rev = df_revenue.copy()
+            if 'ticket_number' in df_rev.columns:
+                df_rev['origin'] = df_rev['ticket_number'].apply(get_origin_rev)
+            else:
+                df_rev['origin'] = '기타'
+            
+            # 생성처 필터 적용
+            if selected_rev_origin != "전체":
+                df_rev = df_rev[df_rev['origin'] == selected_rev_origin].copy()
+            
+            # 환불 상태일 때 금액을 음수로 처리 (is_refunded = 1)
+            def adjust_amount_for_refund(row):
+                amount = row.get('amount', 0) or 0
+                is_refunded = row.get('is_refunded', 0) or 0
+                
+                if is_refunded == 1:
+                    return -abs(amount)
+                return amount
+            
+            if 'is_refunded' in df_rev.columns:
+                df_rev['amount'] = df_rev.apply(adjust_amount_for_refund, axis=1)
+            
+            # payment_item 카테고리 분류
+            def categorize_payment(item):
+                if item == 'GRADE_PRICE':
+                    return '운임'
+                elif item in ['TERMINAL_FEE', 'DEPARTURE_TAX', 'FUEL_TAX', 'WFG', 'BAF', 'PASSENGER_TAX', 'PASSENGER_TAXS']:
+                    return '세금'
+                else:  # ADDITIONAL_SERVICE, MEAL, BAGGAGE 등
+                    return '부가'
+            
+            df_rev['category'] = df_rev['payment_item'].apply(categorize_payment)
+            
+            # ============================================
+            # 🔍 운임 디버깅 테이블 (ERP 비교용)
+            # ============================================
+            st.markdown("""
+            <div style="background: #1E3A5F; padding: 16px; border-radius: 5px; margin-bottom: 16px;">
+                <h3 style="color: #FAFCFE; margin: 0; font-size: 16px;">🔍 운임 디버깅 (ERP 비교용)</h3>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # 운임만 필터링
+            df_fare_only = df_rev[df_rev['payment_item'] == 'GRADE_PRICE'].copy()
+            
+            if not df_fare_only.empty and not df_schedules.empty:
+                # 스케줄 날짜 정보 병합
+                schedule_date_map = df_schedules.set_index('schedule_id')['date'].to_dict()
+                df_fare_only['date'] = df_fare_only['schedule_id'].map(schedule_date_map)
+                
+                # 생성처 (K=한국, J=일본)
+                df_fare_only['origin_code'] = df_fare_only['ticket_number'].apply(
+                    lambda x: 'K' if str(x).startswith('K') else ('J' if str(x).startswith('J') else '-')
+                )
+                df_fare_only['origin_display'] = df_fare_only['origin_code'].map({'K': '한국', 'J': '일본', '-': '기타'})
+                
+                # 통화 (K→KRW, J→JPY)
+                df_fare_only['currency'] = df_fare_only['currency_id'].map({1: 'KRW', 2: 'JPY'})
+                
+                # grade_code 컬럼 확인
+                if 'grade_code' not in df_fare_only.columns:
+                    df_fare_only['grade_code'] = 'UNKNOWN'
+                else:
+                    df_fare_only['grade_code'] = df_fare_only['grade_code'].fillna('UNKNOWN')
+                
+                # 등급별 피벗 테이블 생성
+                # 그룹: 일자, 생성처, 통화 / 컬럼: 등급별 금액
+                grade_columns = ['OR', 'PR', 'RS', 'BS', 'OC', 'IC', 'DA', 'GR']
+                
+                fare_pivot = df_fare_only.groupby(['date', 'origin_display', 'currency', 'grade_code'])['amount'].sum().unstack(fill_value=0).reset_index()
+                
+                # 없는 등급 컬럼 추가
+                for gc in grade_columns:
+                    if gc not in fare_pivot.columns:
+                        fare_pivot[gc] = 0
+                
+                # 계 컬럼 추가
+                fare_pivot['계'] = fare_pivot[grade_columns].sum(axis=1)
+                
+                # 날짜 포맷팅
+                fare_pivot['일자'] = pd.to_datetime(fare_pivot['date']).dt.strftime('%Y.%m.%d')
+                
+                # 컬럼 순서 정리
+                display_cols = ['일자', 'origin_display', 'currency'] + grade_columns + ['계']
+                available_cols = [c for c in display_cols if c in fare_pivot.columns]
+                fare_debug_df = fare_pivot[available_cols].copy()
+                fare_debug_df = fare_debug_df.rename(columns={'origin_display': '생성처', 'currency': '통화'})
+                
+                # 정렬
+                fare_debug_df = fare_debug_df.sort_values(['일자', '생성처', '통화'])
+                
+                # 숫자 포맷팅
+                for col in grade_columns + ['계']:
+                    if col in fare_debug_df.columns:
+                        fare_debug_df[col] = fare_debug_df[col].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "0")
+                
+                st.dataframe(fare_debug_df, use_container_width=True, hide_index=True)
+                
+                # 합계 표시
+                total_fare = df_fare_only['amount'].sum()
+                st.info(f"📊 총 운임 합계: {int(total_fare):,}")
+            else:
+                st.warning("운임 데이터가 없습니다.")
+            
+            st.markdown("---")
+            
+            # ============================================
+            # 기존 매출 분석 테이블
+            # ============================================
+            
+            # 도착 포트 계산
+            route_ports_info = route_direction_map.get(selected_route, {'first': '-', 'second': '-'})
+            first_port = route_ports_info.get('first', '-')
+            second_port = route_ports_info.get('second', '-')
+            
+            if not df_schedules.empty and 'direction' in df_schedules.columns:
+                schedule_direction_map = df_schedules.set_index('schedule_id')['direction'].to_dict()
+                df_rev['direction'] = df_rev['schedule_id'].map(schedule_direction_map)
+                df_rev['arrival_port'] = df_rev['direction'].apply(
+                    lambda d: second_port if d == 'E' else (first_port if d == 'W' else '-')
+                )
+            else:
+                df_rev['arrival_port'] = '-'
+            
+            # 스케줄+도착포트+통화+카테고리별 집계
+            # currency_id: 1=KRW, 2=JPY
+            df_rev['currency'] = df_rev['currency_id'].map({1: 'KRW', 2: 'JPY'})
+            
+            # 피벗 테이블 생성
+            revenue_pivot = df_rev.groupby(['schedule_id', 'arrival_port', 'currency', 'category'])['amount'].sum().unstack(fill_value=0).reset_index()
+            
+            # 컬럼 정리
+            for col in ['운임', '세금', '부가']:
+                if col not in revenue_pivot.columns:
+                    revenue_pivot[col] = 0
+            
+            revenue_pivot['총계'] = revenue_pivot['운임'] + revenue_pivot['세금'] + revenue_pivot['부가']
+            
+            # KRW와 JPY 분리
+            rev_krw = revenue_pivot[revenue_pivot['currency'] == 'KRW'].copy()
+            rev_jpy = revenue_pivot[revenue_pivot['currency'] == 'JPY'].copy()
+            
+            # 스케줄+도착포트별로 병합
+            if not rev_krw.empty:
+                rev_krw = rev_krw.rename(columns={'운임': '운임_KRW', '세금': '세금_KRW', '부가': '부가_KRW', '총계': '총_KRW'})
+                rev_krw = rev_krw.drop(columns=['currency'], errors='ignore')
+            else:
+                rev_krw = pd.DataFrame(columns=['schedule_id', 'arrival_port', '운임_KRW', '세금_KRW', '부가_KRW', '총_KRW'])
+            
+            if not rev_jpy.empty:
+                rev_jpy = rev_jpy.rename(columns={'운임': '운임_JPY', '세금': '세금_JPY', '부가': '부가_JPY', '총계': '총_JPY'})
+                rev_jpy = rev_jpy.drop(columns=['currency'], errors='ignore')
+            else:
+                rev_jpy = pd.DataFrame(columns=['schedule_id', 'arrival_port', '운임_JPY', '세금_JPY', '부가_JPY', '총_JPY'])
+            
+            # 병합
+            if not rev_krw.empty and not rev_jpy.empty:
+                rev_merged = pd.merge(rev_krw, rev_jpy, on=['schedule_id', 'arrival_port'], how='outer')
+            elif not rev_krw.empty:
+                rev_merged = rev_krw.copy()
+                for col in ['운임_JPY', '세금_JPY', '부가_JPY', '총_JPY']:
+                    rev_merged[col] = 0
+            elif not rev_jpy.empty:
+                rev_merged = rev_jpy.copy()
+                for col in ['운임_KRW', '세금_KRW', '부가_KRW', '총_KRW']:
+                    rev_merged[col] = 0
+            else:
+                rev_merged = pd.DataFrame()
+            
+            if not rev_merged.empty:
+                # 결측값 0으로
+                for col in ['운임_KRW', '세금_KRW', '부가_KRW', '총_KRW', '운임_JPY', '세금_JPY', '부가_JPY', '총_JPY']:
+                    if col in rev_merged.columns:
+                        rev_merged[col] = rev_merged[col].fillna(0).astype(int)
+                
+                # 스케줄 정보 병합
+                if not df_schedules.empty:
+                    schedule_cols = ['schedule_id', 'date', 'time_display', 'departure_port']
+                    available_cols = [c for c in schedule_cols if c in df_schedules.columns]
+                    schedule_info = df_schedules[available_cols].drop_duplicates()
+                    rev_merged = rev_merged.merge(schedule_info, on='schedule_id', how='left')
+                    
+                    if 'date' in rev_merged.columns:
+                        rev_merged['date_display'] = pd.to_datetime(rev_merged['date']).dt.strftime('%m-%d')
+                        weekday_map = {0: '월', 1: '화', 2: '수', 3: '목', 4: '금', 5: '토', 6: '일'}
+                        rev_merged['weekday'] = pd.to_datetime(rev_merged['date']).dt.dayofweek.map(weekday_map)
+                    
+                    if 'date' in rev_merged.columns and 'time_display' in rev_merged.columns:
+                        rev_merged = rev_merged.sort_values(['date', 'time_display', 'arrival_port'])
+                
+                # 테이블 HTML 생성
+                html_rev = '<div class="responsive-table-container"><table style="width: 100%; border-collapse: collapse; background: #FFFFFF; font-family: Noto Sans KR, sans-serif;">'
+                
+                # 헤더 (2줄)
+                html_rev += '''<thead>
+                <tr>
+                    <th rowspan="2" style="background: #232A5E; color: #FAFCFE; padding: 10px 8px; border: 1px solid #3a4a7e; font-weight: 700; font-size: 11px; text-align: center; vertical-align: middle;">날짜</th>
+                    <th rowspan="2" style="background: #232A5E; color: #FAFCFE; padding: 10px 8px; border: 1px solid #3a4a7e; font-weight: 700; font-size: 11px; text-align: center; vertical-align: middle;">출발</th>
+                    <th rowspan="2" style="background: #232A5E; color: #FAFCFE; padding: 10px 8px; border: 1px solid #3a4a7e; font-weight: 700; font-size: 11px; text-align: center; vertical-align: middle;">도착</th>
+                    <th colspan="4" style="background: #436CFC; color: #FAFCFE; padding: 8px; border: 1px solid #3a4a7e; font-weight: 700; font-size: 11px; text-align: center;">KRW (원)</th>
+                    <th colspan="4" style="background: #EA3336; color: #FAFCFE; padding: 8px; border: 1px solid #3a4a7e; font-weight: 700; font-size: 11px; text-align: center;">JPY (엔)</th>
+                </tr>
+                <tr>
+                    <th style="background: #5a7ffd; color: #FAFCFE; padding: 8px 6px; border: 1px solid #3a4a7e; font-weight: 600; font-size: 10px; text-align: center;">운임</th>
+                    <th style="background: #5a7ffd; color: #FAFCFE; padding: 8px 6px; border: 1px solid #3a4a7e; font-weight: 600; font-size: 10px; text-align: center;">세금</th>
+                    <th style="background: #5a7ffd; color: #FAFCFE; padding: 8px 6px; border: 1px solid #3a4a7e; font-weight: 600; font-size: 10px; text-align: center;">부가</th>
+                    <th style="background: #3a5fd9; color: #FAFCFE; padding: 8px 6px; border: 1px solid #3a4a7e; font-weight: 700; font-size: 10px; text-align: center;">총계</th>
+                    <th style="background: #f05a5c; color: #FAFCFE; padding: 8px 6px; border: 1px solid #3a4a7e; font-weight: 600; font-size: 10px; text-align: center;">운임</th>
+                    <th style="background: #f05a5c; color: #FAFCFE; padding: 8px 6px; border: 1px solid #3a4a7e; font-weight: 600; font-size: 10px; text-align: center;">세금</th>
+                    <th style="background: #f05a5c; color: #FAFCFE; padding: 8px 6px; border: 1px solid #3a4a7e; font-weight: 600; font-size: 10px; text-align: center;">부가</th>
+                    <th style="background: #c92a2d; color: #FAFCFE; padding: 8px 6px; border: 1px solid #3a4a7e; font-weight: 700; font-size: 10px; text-align: center;">총계</th>
+                </tr>
+                </thead>'''
+                
+                # 바디
+                html_rev += '<tbody>'
+                for row_idx, row in rev_merged.iterrows():
+                    row_bg = '#FFFFFF' if row_idx % 2 == 0 else '#F9FAFB'
+                    time_str = row.get('time_display', '') or ''
+                    date_str = f"{row.get('date_display', '')} {time_str} ({row.get('weekday', '')})"
+                    dep_port = row.get('departure_port', '-') or '-'
+                    arr_port = row.get('arrival_port', '-') or '-'
+                    
+                    html_rev += f'''<tr style="border-bottom: 1px solid #DAE0E3;">
+                        <td style="background: {row_bg}; color: #0E0E2C; padding: 8px 6px; border-right: 1px solid #DAE0E3; font-size: 12px; text-align: center;">{date_str}</td>
+                        <td style="background: {row_bg}; color: #0E0E2C; padding: 8px 6px; border-right: 1px solid #DAE0E3; font-size: 12px; text-align: center; font-weight: 500;">{dep_port}</td>
+                        <td style="background: {row_bg}; color: #0E0E2C; padding: 8px 6px; border-right: 1px solid #DAE0E3; font-size: 12px; text-align: center; font-weight: 500;">{arr_port}</td>
+                        <td style="background: {row_bg}; color: #436CFC; padding: 8px 6px; border-right: 1px solid #DAE0E3; font-size: 12px; text-align: right;">{int(row.get('운임_KRW', 0)):,}</td>
+                        <td style="background: {row_bg}; color: #436CFC; padding: 8px 6px; border-right: 1px solid #DAE0E3; font-size: 12px; text-align: right;">{int(row.get('세금_KRW', 0)):,}</td>
+                        <td style="background: {row_bg}; color: #436CFC; padding: 8px 6px; border-right: 1px solid #DAE0E3; font-size: 12px; text-align: right;">{int(row.get('부가_KRW', 0)):,}</td>
+                        <td style="background: #F3F6FF; color: #3a5fd9; padding: 8px 6px; border-right: 1px solid #DAE0E3; font-size: 12px; text-align: right; font-weight: 700;">{int(row.get('총_KRW', 0)):,}</td>
+                        <td style="background: {row_bg}; color: #EA3336; padding: 8px 6px; border-right: 1px solid #DAE0E3; font-size: 12px; text-align: right;">{int(row.get('운임_JPY', 0)):,}</td>
+                        <td style="background: {row_bg}; color: #EA3336; padding: 8px 6px; border-right: 1px solid #DAE0E3; font-size: 12px; text-align: right;">{int(row.get('세금_JPY', 0)):,}</td>
+                        <td style="background: {row_bg}; color: #EA3336; padding: 8px 6px; border-right: 1px solid #DAE0E3; font-size: 12px; text-align: right;">{int(row.get('부가_JPY', 0)):,}</td>
+                        <td style="background: #FFF5F5; color: #c92a2d; padding: 8px 6px; font-size: 12px; text-align: right; font-weight: 700;">{int(row.get('총_JPY', 0)):,}</td>
+                    </tr>'''
+                
+                # 합계 row
+                total_운임_krw = int(rev_merged['운임_KRW'].sum()) if '운임_KRW' in rev_merged.columns else 0
+                total_세금_krw = int(rev_merged['세금_KRW'].sum()) if '세금_KRW' in rev_merged.columns else 0
+                total_부가_krw = int(rev_merged['부가_KRW'].sum()) if '부가_KRW' in rev_merged.columns else 0
+                total_총_krw = int(rev_merged['총_KRW'].sum()) if '총_KRW' in rev_merged.columns else 0
+                total_운임_jpy = int(rev_merged['운임_JPY'].sum()) if '운임_JPY' in rev_merged.columns else 0
+                total_세금_jpy = int(rev_merged['세금_JPY'].sum()) if '세금_JPY' in rev_merged.columns else 0
+                total_부가_jpy = int(rev_merged['부가_JPY'].sum()) if '부가_JPY' in rev_merged.columns else 0
+                total_총_jpy = int(rev_merged['총_JPY'].sum()) if '총_JPY' in rev_merged.columns else 0
+                
+                html_rev += f'''<tr style="border-top: 2px solid #232A5E;">
+                    <td colspan="3" style="background: #232A5E; color: #FAFCFE; padding: 12px 10px; font-size: 13px; text-align: center; font-weight: 700;">합계</td>
+                    <td style="background: #F3F6FF; color: #436CFC; padding: 12px 8px; border-right: 1px solid #DAE0E3; font-size: 12px; text-align: right; font-weight: 700;">{total_운임_krw:,}</td>
+                    <td style="background: #F3F6FF; color: #436CFC; padding: 12px 8px; border-right: 1px solid #DAE0E3; font-size: 12px; text-align: right; font-weight: 700;">{total_세금_krw:,}</td>
+                    <td style="background: #F3F6FF; color: #436CFC; padding: 12px 8px; border-right: 1px solid #DAE0E3; font-size: 12px; text-align: right; font-weight: 700;">{total_부가_krw:,}</td>
+                    <td style="background: #436CFC; color: #FAFCFE; padding: 12px 8px; border-right: 1px solid #3a4a7e; font-size: 13px; text-align: right; font-weight: 700;">{total_총_krw:,}</td>
+                    <td style="background: #FFF5F5; color: #EA3336; padding: 12px 8px; border-right: 1px solid #DAE0E3; font-size: 12px; text-align: right; font-weight: 700;">{total_운임_jpy:,}</td>
+                    <td style="background: #FFF5F5; color: #EA3336; padding: 12px 8px; border-right: 1px solid #DAE0E3; font-size: 12px; text-align: right; font-weight: 700;">{total_세금_jpy:,}</td>
+                    <td style="background: #FFF5F5; color: #EA3336; padding: 12px 8px; border-right: 1px solid #DAE0E3; font-size: 12px; text-align: right; font-weight: 700;">{total_부가_jpy:,}</td>
+                    <td style="background: #EA3336; color: #FAFCFE; padding: 12px 8px; font-size: 13px; text-align: right; font-weight: 700;">{total_총_jpy:,}</td>
+                </tr>'''
+                
+                html_rev += '</tbody></table></div>'
+                
+                st.markdown(html_rev, unsafe_allow_html=True)
+            else:
+                st.warning("매출 데이터가 없습니다.")
 
 st.markdown('<hr style="border: none; height: 1px; background: #DAE0E3; margin: 40px 0;">', unsafe_allow_html=True)
 st.markdown('<p style="text-align: center; color: #999999; font-size: 12px;">문제가 있으면 DB 접속 정보를 확인하세요</p>', unsafe_allow_html=True)
