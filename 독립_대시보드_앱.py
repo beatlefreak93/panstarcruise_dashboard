@@ -11,6 +11,8 @@ import pyodbc
 import pandas as pd
 import json
 from datetime import datetime, timedelta
+import plotly.express as px
+import plotly.graph_objects as go
 
 # set_page_config는 반드시 첫 번째 Streamlit 명령이어야 함
 st.set_page_config(page_title="객실 현황 대시보드", layout="wide", initial_sidebar_state="collapsed")
@@ -1201,6 +1203,31 @@ if query_button:
                     df_vacant_rooms = pd.read_sql(vacant_rooms_query, conn_cruise)
                     df_vacant_rooms['status'] = 'vacant'
                 
+                # 4. 승객 분석 데이터 조회 (확정 승객만)
+                # 성별, 국적, 연령대 분석용
+                # birth_day는 datetimeoffset 타입이라 CONVERT로 date로 변환
+                # PSMC: on_boarding_room_id IS NOT NULL 조건 추가 (승객 탭과 동일)
+                room_filter = "" if is_seat_based else "AND t.on_boarding_room_id IS NOT NULL"
+                passenger_analysis_query = f"""
+                    SELECT 
+                        t.departure_schedule_id AS schedule_id,
+                        p.sex,
+                        p.nationality,
+                        CONVERT(date, p.birth_day) AS birth_day
+                    FROM tickets t
+                    INNER JOIN reservation_passengers rp ON t.reservation_passenger_id = rp.id
+                    INNER JOIN passengers p ON rp.passenger_id = p.id
+                    WHERE t.departure_schedule_id IN ({schedule_ids})
+                      AND t.is_temporary = 0
+                      AND t.deleted_at IS NULL
+                      AND t.status NOT LIKE 'REFUND%'
+                      {room_filter}
+                      AND rp.deleted_at IS NULL
+                      AND p.deleted_at IS NULL
+                      {tsl_arrival_filter}
+                """
+                df_passenger_analysis = pd.read_sql(passenger_analysis_query, conn_cruise)
+                
                 conn_cruise.close()
                 
                 # 4. 데이터 병합 및 공실 계산
@@ -1521,7 +1548,8 @@ if query_button:
                     'end_date': str(end_date),
                     'vessel_name': vessel_name,
                     'room_details': df_all_room_details.to_dict('records'),  # 모달용 데이터
-                    'is_seat_based': is_seat_based  # PSTL/PSGR 좌석 기반 여부
+                    'is_seat_based': is_seat_based,  # PSTL/PSGR 좌석 기반 여부
+                    'passenger_analysis': df_passenger_analysis  # 승객 분석 데이터
                 }
                 
                 st.success("조회 완료")
@@ -1724,7 +1752,7 @@ if 'query_result' in st.session_state:
         )
     
     # 탭 생성
-    tab1, tab2 = st.tabs([tab1_name, "승객"])
+    tab1, tab2, tab3 = st.tabs([tab1_name, "승객", "📊 승객 분석"])
     
     with tab1:
         # 객실 테이블 렌더링 (JavaScript 모달 포함)
@@ -2077,6 +2105,261 @@ if 'query_result' in st.session_state:
             </div>
         </div>
         """, unsafe_allow_html=True)
+    
+    with tab3:
+        # 승객 분석 대시보드
+        df_analysis = result.get('passenger_analysis', pd.DataFrame())
+        
+        if df_analysis.empty:
+            st.info("확정된 승객 데이터가 없습니다.")
+        else:
+            # 데이터 전처리
+            today = datetime.today()
+            
+            # 연령 계산 (birth_day가 있는 경우만)
+            df_analysis = df_analysis.dropna(subset=['birth_day'])
+            df_analysis['birth_day'] = pd.to_datetime(df_analysis['birth_day'])
+            df_analysis['age'] = df_analysis['birth_day'].apply(
+                lambda x: (today - x).days // 365 if pd.notna(x) else None
+            )
+            
+            # 연령대 분류
+            def get_age_group(age):
+                if age is None or pd.isna(age):
+                    return '미상'
+                elif age < 10:
+                    return '0-9세'
+                elif age < 20:
+                    return '10대'
+                elif age < 30:
+                    return '20대'
+                elif age < 40:
+                    return '30대'
+                elif age < 50:
+                    return '40대'
+                elif age < 60:
+                    return '50대'
+                elif age < 70:
+                    return '60대'
+                else:
+                    return '70대+'
+            
+            df_analysis['age_group'] = df_analysis['age'].apply(get_age_group)
+            
+            # 국적 코드 -> 국가명 변환
+            nationality_map = {
+                'KR': '한국 🇰🇷',
+                'JP': '일본 🇯🇵',
+                'CN': '중국 🇨🇳',
+                'US': '미국 🇺🇸',
+                'TW': '대만 🇹🇼',
+                'HK': '홍콩 🇭🇰',
+                'VN': '베트남 🇻🇳',
+                'TH': '태국 🇹🇭',
+                'PH': '필리핀 🇵🇭',
+                'MY': '말레이시아 🇲🇾',
+                'SG': '싱가포르 🇸🇬',
+                'ID': '인도네시아 🇮🇩',
+                'AU': '호주 🇦🇺',
+                'CA': '캐나다 🇨🇦',
+                'GB': '영국 🇬🇧',
+                'DE': '독일 🇩🇪',
+                'FR': '프랑스 🇫🇷',
+                'RU': '러시아 🇷🇺'
+            }
+            df_analysis['nationality_name'] = df_analysis['nationality'].map(
+                lambda x: nationality_map.get(x, f'기타 ({x})') if pd.notna(x) else '미상'
+            )
+            
+            # 성별 한글 변환
+            sex_map = {'M': '남성', 'F': '여성'}
+            df_analysis['sex_name'] = df_analysis['sex'].map(
+                lambda x: sex_map.get(x, '미상') if pd.notna(x) else '미상'
+            )
+            
+            # 총 승객 수
+            total_passengers = len(df_analysis)
+            
+            # 헤더
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 30px; border-radius: 12px; margin-bottom: 30px;">
+                <h2 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 300;">
+                    📊 확정 승객 분석
+                </h2>
+                <p style="color: #a0a0a0; margin: 10px 0 0 0; font-size: 16px;">
+                    조회 기간: {result.get('start_date', '')} ~ {result.get('end_date', '')} | 
+                    총 <span style="color: #4fc3f7; font-weight: 600;">{total_passengers:,}</span>명
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # 3개 차트를 나란히 배치
+            col1, col2, col3 = st.columns(3)
+            
+            # === 성별 분포 (도넛 차트) ===
+            with col1:
+                sex_counts = df_analysis['sex_name'].value_counts()
+                
+                fig_sex = go.Figure(data=[go.Pie(
+                    labels=sex_counts.index,
+                    values=sex_counts.values,
+                    hole=0.6,
+                    marker=dict(
+                        colors=['#4fc3f7', '#f48fb1', '#b0bec5'],
+                        line=dict(color='#ffffff', width=2)
+                    ),
+                    textinfo='label+percent',
+                    textfont=dict(size=14),
+                    hovertemplate='%{label}<br>%{value}명 (%{percent})<extra></extra>'
+                )])
+                
+                fig_sex.update_layout(
+                    title=dict(
+                        text='👤 성별 분포',
+                        font=dict(size=20, color='#333333'),
+                        x=0.5
+                    ),
+                    showlegend=True,
+                    legend=dict(
+                        orientation='h',
+                        yanchor='bottom',
+                        y=-0.15,
+                        xanchor='center',
+                        x=0.5
+                    ),
+                    height=400,
+                    margin=dict(t=60, b=60, l=20, r=20),
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    annotations=[dict(
+                        text=f'<b>{total_passengers:,}</b><br>명',
+                        x=0.5, y=0.5,
+                        font_size=20,
+                        showarrow=False
+                    )]
+                )
+                
+                st.plotly_chart(fig_sex, use_container_width=True)
+            
+            # === 국적 분포 (가로 막대 차트) ===
+            with col2:
+                nationality_counts = df_analysis['nationality_name'].value_counts().head(10)
+                
+                # 색상 그라데이션
+                colors = px.colors.sequential.Blues_r[:len(nationality_counts)]
+                
+                fig_nat = go.Figure(data=[go.Bar(
+                    y=nationality_counts.index[::-1],
+                    x=nationality_counts.values[::-1],
+                    orientation='h',
+                    marker=dict(
+                        color=colors[::-1],
+                        line=dict(color='#ffffff', width=1)
+                    ),
+                    text=nationality_counts.values[::-1],
+                    textposition='outside',
+                    textfont=dict(size=12, color='#333333'),
+                    hovertemplate='%{y}<br>%{x}명<extra></extra>'
+                )])
+                
+                fig_nat.update_layout(
+                    title=dict(
+                        text='🌍 국적 분포 (Top 10)',
+                        font=dict(size=20, color='#333333'),
+                        x=0.5
+                    ),
+                    xaxis=dict(
+                        title='승객 수',
+                        showgrid=True,
+                        gridcolor='rgba(0,0,0,0.1)'
+                    ),
+                    yaxis=dict(
+                        title='',
+                        tickfont=dict(size=12)
+                    ),
+                    height=400,
+                    margin=dict(t=60, b=40, l=120, r=40),
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)'
+                )
+                
+                st.plotly_chart(fig_nat, use_container_width=True)
+            
+            # === 연령대 분포 (세로 막대 차트) ===
+            with col3:
+                # 연령대 순서 지정
+                age_order = ['0-9세', '10대', '20대', '30대', '40대', '50대', '60대', '70대+', '미상']
+                age_counts = df_analysis['age_group'].value_counts()
+                age_counts = age_counts.reindex([a for a in age_order if a in age_counts.index])
+                
+                # 연령대별 색상 (젊은층: 밝은 색, 고령층: 진한 색)
+                age_colors = ['#81d4fa', '#4fc3f7', '#29b6f6', '#03a9f4', '#039be5', '#0288d1', '#0277bd', '#01579b', '#b0bec5']
+                
+                fig_age = go.Figure(data=[go.Bar(
+                    x=age_counts.index,
+                    y=age_counts.values,
+                    marker=dict(
+                        color=age_colors[:len(age_counts)],
+                        line=dict(color='#ffffff', width=1)
+                    ),
+                    text=age_counts.values,
+                    textposition='outside',
+                    textfont=dict(size=12, color='#333333'),
+                    hovertemplate='%{x}<br>%{y}명<extra></extra>'
+                )])
+                
+                fig_age.update_layout(
+                    title=dict(
+                        text='📈 연령대 분포',
+                        font=dict(size=20, color='#333333'),
+                        x=0.5
+                    ),
+                    xaxis=dict(
+                        title='연령대',
+                        tickfont=dict(size=11)
+                    ),
+                    yaxis=dict(
+                        title='승객 수',
+                        showgrid=True,
+                        gridcolor='rgba(0,0,0,0.1)'
+                    ),
+                    height=400,
+                    margin=dict(t=60, b=40, l=40, r=20),
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)'
+                )
+                
+                st.plotly_chart(fig_age, use_container_width=True)
+            
+            # 상세 통계 테이블
+            st.markdown("""
+            <div style="margin-top: 20px; padding: 24px; background: #f8f9fa; border-radius: 8px;">
+                <h4 style="color: #333; margin: 0 0 16px 0; font-size: 18px;">📋 상세 통계</h4>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            stat_col1, stat_col2, stat_col3 = st.columns(3)
+            
+            with stat_col1:
+                st.markdown("**성별 통계**")
+                sex_df = df_analysis['sex_name'].value_counts().reset_index()
+                sex_df.columns = ['성별', '인원']
+                sex_df['비율'] = (sex_df['인원'] / sex_df['인원'].sum() * 100).round(1).astype(str) + '%'
+                st.dataframe(sex_df, hide_index=True, use_container_width=True)
+            
+            with stat_col2:
+                st.markdown("**국적 통계 (Top 10)**")
+                nat_df = df_analysis['nationality_name'].value_counts().head(10).reset_index()
+                nat_df.columns = ['국적', '인원']
+                nat_df['비율'] = (nat_df['인원'] / total_passengers * 100).round(1).astype(str) + '%'
+                st.dataframe(nat_df, hide_index=True, use_container_width=True)
+            
+            with stat_col3:
+                st.markdown("**연령대 통계**")
+                age_df = df_analysis['age_group'].value_counts().reindex([a for a in age_order if a in df_analysis['age_group'].value_counts().index]).reset_index()
+                age_df.columns = ['연령대', '인원']
+                age_df['비율'] = (age_df['인원'] / age_df['인원'].sum() * 100).round(1).astype(str) + '%'
+                st.dataframe(age_df, hide_index=True, use_container_width=True)
 
 st.markdown('<hr style="border: none; height: 1px; background: #e0e0e0; margin: 40px 0;">', unsafe_allow_html=True)
 st.markdown('<p style="text-align: center; color: #999999; font-size: 12px;">문제가 있으면 DB 접속 정보를 확인하세요</p>', unsafe_allow_html=True)
