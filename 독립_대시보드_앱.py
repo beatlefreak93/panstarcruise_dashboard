@@ -2050,12 +2050,13 @@ if 'query_result' in st.session_state:
                 st.session_state.selected_tab = tab_name
                 st.rerun()
     
-    # JavaScript로 탭 버튼만 숨기기 (텍스트 기반)
+    # JavaScript로 숨겨진 버튼만 숨기기 (st.tabs 탭은 제외)
     st.components.v1.html(f"""
         <script>
             setTimeout(function() {{
                 const tabTexts = {tab_options};
-                const buttons = window.parent.document.querySelectorAll('button');
+                // st.tabs의 탭(data-baseweb="tab")은 제외하고, 일반 버튼만 선택
+                const buttons = window.parent.document.querySelectorAll('button:not([data-baseweb="tab"])');
                 buttons.forEach(btn => {{
                     const text = btn.innerText.trim();
                     if (tabTexts.includes(text)) {{
