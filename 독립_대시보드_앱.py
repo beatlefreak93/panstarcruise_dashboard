@@ -960,46 +960,46 @@ if query_button:
                     """
                 else:
                     # PSMC: 객실 기반 - on_boarding_room_id로 객실 연결
-                    booking_query = f"""
-                        WITH room_status AS (
-                            SELECT 
-                                t.departure_schedule_id,
-                                t.on_boarding_room_id,
-                                g.code AS grade,
-                                MAX(CASE 
-                                    WHEN t.is_temporary = 0 
-                                         AND t.status NOT LIKE 'REFUND%'
-                                    THEN 1 
-                                    ELSE 0 
-                                END) AS has_confirmed,
-                                MAX(CASE 
-                                    WHEN t.is_temporary = 1 
-                                         AND t.status NOT LIKE 'REFUND%'
-                                    THEN 1 
-                                    ELSE 0 
-                                END) AS has_blocked
-                            FROM tickets t
-                            INNER JOIN rooms r ON t.on_boarding_room_id = r.id
-                            INNER JOIN grades g ON r.grade_id = g.id
-                            {tsl_arrival_join}
-                            WHERE t.departure_schedule_id IN ({schedule_ids})
-                              AND t.deleted_at IS NULL
-                              AND r.deleted_at IS NULL
-                              AND g.deleted_at IS NULL
-                              AND t.on_boarding_room_id IS NOT NULL
-                              AND t.status NOT LIKE 'REFUND%'
-                              {tsl_arrival_filter}
-                            GROUP BY t.departure_schedule_id, t.on_boarding_room_id, g.code
-                        )
+                booking_query = f"""
+                    WITH room_status AS (
                         SELECT 
-                            departure_schedule_id AS schedule_id,
-                            grade,
-                            COUNT(CASE WHEN has_confirmed = 1 THEN 1 END) AS confirmed_rooms,
-                            COUNT(CASE WHEN has_confirmed = 0 AND has_blocked = 1 THEN 1 END) AS blocked_rooms
-                        FROM room_status
-                        WHERE grade IS NOT NULL
-                        GROUP BY departure_schedule_id, grade
-                    """
+                            t.departure_schedule_id,
+                            t.on_boarding_room_id,
+                            g.code AS grade,
+                            MAX(CASE 
+                                WHEN t.is_temporary = 0 
+                                     AND t.status NOT LIKE 'REFUND%'
+                                THEN 1 
+                                ELSE 0 
+                            END) AS has_confirmed,
+                            MAX(CASE 
+                                WHEN t.is_temporary = 1 
+                                     AND t.status NOT LIKE 'REFUND%'
+                                THEN 1 
+                                ELSE 0 
+                            END) AS has_blocked
+                        FROM tickets t
+                        INNER JOIN rooms r ON t.on_boarding_room_id = r.id
+                        INNER JOIN grades g ON r.grade_id = g.id
+                            {tsl_arrival_join}
+                        WHERE t.departure_schedule_id IN ({schedule_ids})
+                          AND t.deleted_at IS NULL
+                          AND r.deleted_at IS NULL
+                          AND g.deleted_at IS NULL
+                          AND t.on_boarding_room_id IS NOT NULL
+                          AND t.status NOT LIKE 'REFUND%'
+                              {tsl_arrival_filter}
+                        GROUP BY t.departure_schedule_id, t.on_boarding_room_id, g.code
+                    )
+                    SELECT 
+                        departure_schedule_id AS schedule_id,
+                        grade,
+                        COUNT(CASE WHEN has_confirmed = 1 THEN 1 END) AS confirmed_rooms,
+                        COUNT(CASE WHEN has_confirmed = 0 AND has_blocked = 1 THEN 1 END) AS blocked_rooms
+                    FROM room_status
+                    WHERE grade IS NOT NULL
+                    GROUP BY departure_schedule_id, grade
+                """
                 df_bookings = pd.read_sql(booking_query, conn_cruise)
                 
                 # 3-1. 승객 수 조회 (티켓 수 기반)
@@ -1279,7 +1279,7 @@ if query_button:
                     df_with_totals['날짜'] = df_with_totals['date_display'] + ' ' + df_with_totals['time_display'] + ' (' + df_with_totals['weekday'] + ')'
                 else:
                     # 기존 방식 (날짜만)
-                    df_with_totals['날짜'] = df_with_totals['date_display'] + ' (' + df_with_totals['weekday'] + ')'
+                df_with_totals['날짜'] = df_with_totals['date_display'] + ' (' + df_with_totals['weekday'] + ')'
                 
                 # 8. 등급 순서 정의 (선박/항로별로 다름)
                 # PSMC (route 1-4): OR, PR, RS, BS, OC, IC, DA
@@ -1414,7 +1414,7 @@ if query_button:
                             if is_seat_based:
                                 blocked_link = str(blocked)
                                 vacant_link = str(vacant)
-                            else:
+                        else:
                                 blocked_link = f'<span onclick="openRoomModal({schedule_id}, \'{date_display}\', \'{grade}\', \'blocked\')" style="cursor: pointer; display: block;" title="클릭하여 상세보기">{blocked}</span>'
                                 vacant_link = f'<span onclick="openRoomModal({schedule_id}, \'{date_display}\', \'{grade}\', \'vacant\')" style="cursor: pointer; display: block;" title="클릭하여 상세보기">{vacant}</span>'
                             cell_class = 'class="clickable-cell"'
@@ -1721,7 +1721,7 @@ if 'query_result' in st.session_state:
     excel_data = output.getvalue()
     
     # 탭 + 엑셀 버튼을 같은 줄에 배치 (CSS로 조정)
-    st.markdown("""
+                st.markdown("""
     <style>
     .tab-header-container {
         display: flex;
