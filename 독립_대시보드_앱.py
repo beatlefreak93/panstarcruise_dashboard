@@ -2010,69 +2010,60 @@ if 'query_result' in st.session_state:
     if st.session_state.selected_tab not in tab_options:
         st.session_state.selected_tab = tab1_name
     
-    # 선택된 탭 인덱스
-    selected_idx = tab_options.index(st.session_state.selected_tab)
+    # st.radio를 st.tabs처럼 보이게 CSS 스타일링
+    st.markdown("""
+        <style>
+        /* st.radio를 탭처럼 보이게 */
+        div[data-testid="stRadio"] > div {
+            flex-direction: row !important;
+            gap: 0 !important;
+            border-bottom: 1px solid rgba(49, 51, 63, 0.1);
+        }
+        div[data-testid="stRadio"] > div > label {
+            padding: 0.75rem 1rem !important;
+            margin: 0 !important;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            background: transparent !important;
+        }
+        div[data-testid="stRadio"] > div > label:hover {
+            color: rgb(49, 51, 63);
+        }
+        div[data-testid="stRadio"] > div > label[data-baseweb="radio"] > div:first-child {
+            display: none !important;  /* 라디오 버튼 원형 숨기기 */
+        }
+        div[data-testid="stRadio"] > div > label > div:last-child {
+            font-size: 14px;
+            font-weight: 400;
+            color: rgba(49, 51, 63, 0.6);
+        }
+        div[data-testid="stRadio"] > div > label:has(input:checked) {
+            border-bottom: 2px solid rgb(255, 75, 75) !important;
+        }
+        div[data-testid="stRadio"] > div > label:has(input:checked) > div:last-child {
+            font-weight: 600 !important;
+            color: rgb(49, 51, 63) !important;
+        }
+        /* 라디오 레이블 숨기기 */
+        div[data-testid="stRadio"] > label {
+            display: none !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
     
-    # 진짜 st.tabs 표시
-    tab_placeholder = st.tabs(tab_options)
+    # st.radio로 탭 구현 (상태 자동 유지)
+    selected_tab = st.radio(
+        "탭 선택",
+        tab_options,
+        index=tab_options.index(st.session_state.selected_tab),
+        key="tab_radio",
+        horizontal=True,
+        label_visibility="collapsed"
+    )
     
-    # JavaScript로 저장된 탭으로 클릭 + 탭 클릭 감지
-    st.components.v1.html(f"""
-        <script>
-            setTimeout(function() {{
-                // 저장된 탭으로 이동
-                const tabs = window.parent.document.querySelectorAll('[data-baseweb="tab"]');
-                if (tabs && tabs.length > {selected_idx}) {{
-                    tabs[{selected_idx}].click();
-                }}
-                
-                // 탭 클릭 시 숨겨진 버튼 클릭
-                tabs.forEach((tab, idx) => {{
-                    tab.addEventListener('click', function(e) {{
-                        const buttons = window.parent.document.querySelectorAll('button[kind="secondary"]');
-                        // 숨겨진 버튼 찾아서 클릭
-                        buttons.forEach(btn => {{
-                            if (btn.innerText === ['{ tab_options[0] }', '{ tab_options[1] }', '{ tab_options[2] }', '{ tab_options[3] }'][idx]) {{
-                                btn.click();
-                            }}
-                        }});
-                    }});
-                }});
-            }}, 50);
-        </script>
-    """, height=0)
-    
-    # 숨겨진 버튼들 (탭 전환용)
-    btn_cols = st.columns(4)
-    for idx, (col, tab_name) in enumerate(zip(btn_cols, tab_options)):
-        with col:
-            if st.button(tab_name, key=f"hidden_tab_btn_{idx}"):
-                st.session_state.selected_tab = tab_name
-                st.rerun()
-    
-    # JavaScript로 숨겨진 버튼만 숨기기 (st.tabs 탭은 제외)
-    st.components.v1.html(f"""
-        <script>
-            setTimeout(function() {{
-                const tabTexts = {tab_options};
-                // st.tabs의 탭(data-baseweb="tab")은 제외하고, 일반 버튼만 선택
-                const buttons = window.parent.document.querySelectorAll('button:not([data-baseweb="tab"])');
-                buttons.forEach(btn => {{
-                    const text = btn.innerText.trim();
-                    if (tabTexts.includes(text)) {{
-                        btn.style.position = 'absolute';
-                        btn.style.left = '-9999px';
-                        btn.style.width = '1px';
-                        btn.style.height = '1px';
-                        btn.style.overflow = 'hidden';
-                    }}
-                }});
-            }}, 100);
-        </script>
-    """, height=0)
-    
-    # 현재 선택된 탭
-    selected_tab = st.session_state.selected_tab
+    # 선택된 탭 업데이트
+    if selected_tab != st.session_state.selected_tab:
+        st.session_state.selected_tab = selected_tab
     
     if selected_tab == tab1_name:
         # 객실 테이블 렌더링 (JavaScript 모달 포함)
