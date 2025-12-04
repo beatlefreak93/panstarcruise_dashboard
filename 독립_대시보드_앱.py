@@ -1382,8 +1382,14 @@ if query_button:
                             # JavaScript onclick으로 모달 표시 (페이지 새로고침 없음!)
                             # status는 영어로 전달 (인코딩 문제 방지)
                             confirmed_link = f'<span onclick="openRoomModal({schedule_id}, \'{date_display}\', \'{grade}\', \'confirmed\')" style="cursor: pointer; display: block;" title="클릭하여 상세보기">{confirmed}</span>'
-                            blocked_link = f'<span onclick="openRoomModal({schedule_id}, \'{date_display}\', \'{grade}\', \'blocked\')" style="cursor: pointer; display: block;" title="클릭하여 상세보기">{blocked}</span>'
-                            vacant_link = f'<span onclick="openRoomModal({schedule_id}, \'{date_display}\', \'{grade}\', \'vacant\')" style="cursor: pointer; display: block;" title="클릭하여 상세보기">{vacant}</span>'
+                            
+                            # PSTL/PSGR 좌석 기반: 블록과 공실은 클릭 불가 (상세 데이터 의미 없음)
+                            if is_seat_based:
+                                blocked_link = str(blocked)
+                                vacant_link = str(vacant)
+                            else:
+                                blocked_link = f'<span onclick="openRoomModal({schedule_id}, \'{date_display}\', \'{grade}\', \'blocked\')" style="cursor: pointer; display: block;" title="클릭하여 상세보기">{blocked}</span>'
+                                vacant_link = f'<span onclick="openRoomModal({schedule_id}, \'{date_display}\', \'{grade}\', \'vacant\')" style="cursor: pointer; display: block;" title="클릭하여 상세보기">{vacant}</span>'
                             cell_class = 'class="clickable-cell"'
                         else:
                             confirmed_link = str(confirmed)
@@ -1514,7 +1520,8 @@ if query_button:
                     'start_date': str(start_date),
                     'end_date': str(end_date),
                     'vessel_name': vessel_name,
-                    'room_details': df_all_room_details.to_dict('records')  # 모달용 데이터
+                    'room_details': df_all_room_details.to_dict('records'),  # 모달용 데이터
+                    'is_seat_based': is_seat_based  # PSTL/PSGR 좌석 기반 여부
                 }
                 
                 st.success("조회 완료")
