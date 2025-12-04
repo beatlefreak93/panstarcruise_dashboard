@@ -845,7 +845,7 @@ if query_button:
             
             # 날짜/시간 포맷팅 (pandas에서 처리)
             df_schedules['date'] = pd.to_datetime(df_schedules['etd_date'])
-            df_schedules['date_display'] = df_schedules['date'].dt.strftime('%m월 %d일')
+            df_schedules['date_display'] = df_schedules['date'].dt.strftime('%m-%d')
             df_schedules['weekday'] = df_schedules['date'].dt.day_name()
             weekday_ko = {
                 'Monday': '월', 'Tuesday': '화', 'Wednesday': '수', 
@@ -1005,9 +1005,10 @@ if query_button:
                             g.code AS grade,
                             COUNT(*) AS blocked_tickets,
                             CASE 
-                                WHEN g.code IN ('OR', 'BS', 'PR', 'RS') THEN 2
+                                WHEN g.code IN ('OR', 'BS', 'PR') THEN 2
+                                WHEN g.code = 'RS' THEN 3
                                 WHEN g.code IN ('IC', 'OC', 'DA') THEN 4
-                                WHEN g.code = 'GR' THEN 16
+                                WHEN g.code = 'GR' THEN 8
                                 ELSE 2
                             END AS capacity
                         FROM tickets t
@@ -1331,11 +1332,11 @@ if query_button:
                 html_table += '</tbody></table></div>'
                 
                 # ========== 승객 수 기반 테이블 생성 ==========
-                # 등급별 정원 정의 (OR,BS,PR,RS=2명, IC,OC,DA=4명, GR=16명)
+                # 등급별 정원 정의 (OR,BS,PR=2명, RS=3명, IC,OC,DA=4명, GR=8명)
                 grade_capacity = {
-                    'OR': 2, 'BS': 2, 'PR': 2, 'RS': 2,
+                    'OR': 2, 'BS': 2, 'PR': 2, 'RS': 3,
                     'IC': 4, 'OC': 4, 'DA': 4,
-                    'GR': 16,
+                    'GR': 8,
                     'PRM': 1, 'ECM': 1,  # PSTL 좌석
                     'FC': 1, 'BUS': 1, 'STA': 1  # PSGR 좌석
                 }
@@ -1604,27 +1605,31 @@ if 'query_result' in st.session_state:
     wb.save(output)
     excel_data = output.getvalue()
     
-    # 탭 + 다운로드 버튼을 같은 줄에 배치
+    # 탭 + 엑셀 버튼을 같은 줄에 배치 (CSS로 조정)
     st.markdown("""
     <style>
-    .tab-excel-container {
+    .tab-header-container {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: -40px;
     }
-    .excel-download-btn {
+    div[data-testid="stTabs"] {
         position: relative;
+    }
+    .excel-btn-wrapper {
+        position: absolute;
+        right: 0;
+        top: 0;
         z-index: 100;
     }
     </style>
     """, unsafe_allow_html=True)
     
-    # 탭과 다운로드 버튼 배치
-    col_tab, col_btn = st.columns([9, 1])
-    with col_btn:
+    # 엑셀 버튼을 가장 오른쪽에 배치
+    col_spacer, col_excel = st.columns([10, 1])
+    with col_excel:
         st.download_button(
-            label="📥 Excel",
+            label="엑셀 출력",
             data=excel_data,
             file_name=f"크루즈현황_{start_date}_{end_date}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1873,26 +1878,26 @@ if 'query_result' in st.session_state:
         <div style="margin-top: 40px; padding: 36px; background: #ffffff; border-radius: 2px; border: 1px solid #e0e0e0;">
             <div style="color: #6b6b6b; font-weight: 600; font-size: 14px; margin-bottom: 28px; text-transform: uppercase; letter-spacing: 1.5px;">범례</div>
             <div class="legend-container" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 28px;">
-                <div style="display: flex; align-items: center;">
+                        <div style="display: flex; align-items: center;">
                     <span style="display: inline-block; width: 28px; height: 28px; background: #0a0a0a; border-radius: 1px; margin-right: 14px;"></span>
                     <span style="color: #0a0a0a; font-size: 16px; font-weight: 500;">확정 (실제 명단 입력 완료)</span>
-                </div>
-                <div style="display: flex; align-items: center;">
+                        </div>
+                        <div style="display: flex; align-items: center;">
                     <span style="display: inline-block; width: 28px; height: 28px; background: #6b6b6b; border-radius: 1px; margin-right: 14px;"></span>
                     <span style="color: #6b6b6b; font-size: 16px; font-weight: 500;">블록 (점유만 된 상태)</span>
-                </div>
-                <div style="display: flex; align-items: center;">
+                        </div>
+                        <div style="display: flex; align-items: center;">
                     <span style="display: inline-block; width: 28px; height: 28px; background: #fffef5; border: 1px solid #1565c0; border-radius: 1px; margin-right: 14px;"></span>
                     <span style="color: #1565c0; font-size: 16px; font-weight: 500;">공실 (예약 가능한 객실)</span>
-                </div>
-                <div style="display: flex; align-items: center;">
+                        </div>
+                        <div style="display: flex; align-items: center;">
                     <span style="display: inline-block; width: 28px; height: 28px; background: #c62828; border-radius: 1px; margin-right: 14px;"></span>
                     <span style="color: #c62828; font-size: 16px; font-weight: 600;">예약불가 (공실 0개)</span>
+                        </div>
+                    </div>
                 </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
+                """, unsafe_allow_html=True)
+                
     with tab2:
         # 승객 테이블 생성
         final_df_passengers = result['final_df_passengers']
