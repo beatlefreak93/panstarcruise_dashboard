@@ -42,37 +42,53 @@ except Exception as e:
 
 # Session state 초기화 (필요시)
 st.markdown("""
-<div style="text-align: center; padding: 60px 0 40px 0;">
-    <h1 style="font-size: 48px; font-weight: 300; letter-spacing: -1px; color: #0a0a0a; margin-bottom: 12px;">
+<div style="text-align: center; padding: 40px 0 30px 0;">
+    <h1 style="font-size: 32px; font-weight: 700; letter-spacing: -0.5px; color: #232A5E; margin-bottom: 8px; font-family: 'Noto Sans KR', sans-serif;">
         NEOHELIOS CRUISE
     </h1>
-    <p style="font-size: 16px; font-weight: 400; color: #6b6b6b; letter-spacing: 0.5px; text-transform: uppercase;">
-        Cabin Availability Dashboard
+    <p style="font-size: 14px; font-weight: 400; color: #88949C; letter-spacing: -0.5px; font-family: 'Noto Sans KR', sans-serif;">
+        객실 잔여 현황 대시보드
     </p>
 </div>
 """, unsafe_allow_html=True)
 
-# Palantir 스타일 정의 (클린 화이트 + 반응형)
+# NEOHELIOS 디자인 시스템 스타일
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
     
-    /* 전체 배경 - Palantir 스타일 */
-    .stApp {
-        background: #fafafa;
-        color: #0a0a0a;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    /* === CSS Variables (Design Tokens) === */
+    :root {
+        --nh-primary: #436CFC;
+        --nh-primary-light: #F3F6FF;
+        --nh-helios-blue: #232A5E;
+        --nh-alert-red: #EA3336;
+        --nh-bg-gray: #F3F7F9;
+        --nh-bg-white: #FFFFFF;
+        --nh-border: #DAE0E3;
+        --nh-text-dark: #0E0E2C;
+        --nh-text-gray: #88949C;
+        --nh-text-light: #9EA8B0;
+        --nh-text-disabled: #B7BFC5;
+        --nh-disabled-bg: #E3E8EB;
+        --nh-font: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
     }
     
-    /* 메인 컨테이너 - 전체 너비 활용 */
+    /* === 전체 배경 === */
+    .stApp {
+        background: var(--nh-bg-gray);
+        color: var(--nh-text-dark);
+        font-family: var(--nh-font);
+    }
+    
+    /* === 메인 컨테이너 === */
     .main {
-        background: #fafafa;
+        background: var(--nh-bg-gray);
         padding: 1rem 2rem;
         max-width: 100%;
         margin: 0;
     }
     
-    /* Streamlit 기본 블록 패딩 제거 */
     .block-container {
         padding-left: 1rem !important;
         padding-right: 1rem !important;
@@ -81,215 +97,226 @@ st.markdown("""
         max-width: 100% !important;
     }
     
-    /* 전체 앱 너비 최대화 */
     section.main > div {
         max-width: 100%;
         padding-left: 2rem;
         padding-right: 2rem;
     }
     
-    /* 제목 스타일 */
+    /* === 제목 스타일 === */
     h1 {
-        color: #1a1a1a;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        font-weight: 600;
+        color: var(--nh-helios-blue);
+        font-family: var(--nh-font);
+        font-weight: 700;
         letter-spacing: -0.5px;
         margin-bottom: 10px;
     }
     
     h3 {
-        color: #2d2d2d;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: var(--nh-helios-blue);
+        font-family: var(--nh-font);
         font-weight: 500;
         font-size: 14px;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
+        letter-spacing: -0.5px;
         margin-bottom: 16px;
     }
     
-    /* 버튼 스타일 - Palantir 느낌 */
+    /* === 버튼 스타일 - Primary (SEABLUE) === */
     .stButton > button {
-        background: #0a0a0a;
-        color: #ffffff;
+        background: var(--nh-primary);
+        color: var(--nh-bg-white);
+        font-family: var(--nh-font);
         font-weight: 500;
         border: none;
-        border-radius: 2px;
-        padding: 14px 28px;
-        font-size: 15px;
-        letter-spacing: 0.5px;
-        text-transform: uppercase;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+        border-radius: 5px;
+        padding: 12px 24px;
+        font-size: 14px;
+        letter-spacing: -0.5px;
+        transition: all 0.2s ease;
+        box-shadow: none;
     }
     
     .stButton > button:hover {
-        background: #2a2a2a;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        background: #3459E6;
+        box-shadow: 0 2px 8px rgba(67, 108, 252, 0.3);
         transform: translateY(-1px);
     }
     
-    /* 다운로드 버튼 - 흰색 배경에 보더 */
+    /* === 다운로드 버튼 - Secondary === */
     .stDownloadButton > button {
-        background: #ffffff;
-        color: #0a0a0a;
-        border: 1px solid #d0d0d0;
+        background: var(--nh-bg-white);
+        color: var(--nh-helios-blue);
+        font-family: var(--nh-font);
+        border: 1px solid var(--nh-border);
         font-weight: 500;
-        border-radius: 2px;
-        padding: 18px 36px;
-        font-size: 16px;
-        letter-spacing: 0.5px;
-        text-transform: uppercase;
-        width: 100%;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        border-radius: 5px;
+        padding: 10px 20px;
+        font-size: 14px;
+        letter-spacing: -0.5px;
+        width: auto;
+        transition: all 0.2s ease;
     }
     
     .stDownloadButton > button:hover {
-        background: #0a0a0a;
-        color: #ffffff;
-        border-color: #0a0a0a;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        transform: translateY(-1px);
+        background: var(--nh-primary);
+        color: var(--nh-bg-white);
+        border-color: var(--nh-primary);
     }
     
-    /* 입력 필드 - 미니멀 스타일 */
+    /* === 입력 필드 스타일 === */
     .stSelectbox > div > div,
     .stDateInput > div > div,
     .stTextInput > div > div {
-        border-radius: 2px;
-        border: 1px solid #d0d0d0;
-        background: #ffffff;
+        border-radius: 5px;
+        border: 1px solid var(--nh-border);
+        background: var(--nh-bg-gray);
         transition: all 0.2s ease;
     }
     
     .stSelectbox > div > div:hover,
     .stDateInput > div > div:hover,
     .stTextInput > div > div:hover {
-        border-color: #0a0a0a;
+        border-color: var(--nh-text-light);
     }
     
-    /* 라벨 스타일 */
+    .stSelectbox > div > div:focus-within,
+    .stDateInput > div > div:focus-within,
+    .stTextInput > div > div:focus-within {
+        border: 2px solid var(--nh-primary) !important;
+        background: var(--nh-bg-gray);
+    }
+    
+    /* === 라벨 스타일 === */
     .stSelectbox label,
     .stDateInput label,
     .stTextInput label {
-        font-size: 14px;
-        font-weight: 600;
-        letter-spacing: 0.5px;
-        text-transform: uppercase;
-        color: #0a0a0a;
+        font-family: var(--nh-font);
+        font-size: 12px;
+        font-weight: 500;
+        letter-spacing: -0.5px;
+        color: var(--nh-helios-blue);
     }
     
-    /* 입력 필드 내 텍스트 */
+    /* === 입력 필드 내 텍스트 === */
     .stSelectbox input,
     .stSelectbox select,
     .stSelectbox div[data-baseweb="select"] > div,
     .stSelectbox div[data-baseweb="select"] span,
     .stDateInput input,
     .stTextInput input {
-        color: #0a0a0a !important;
-        font-size: 17px !important;
-        background-color: #ffffff !important;
+        color: var(--nh-text-dark) !important;
+        font-family: var(--nh-font) !important;
+        font-size: 14px !important;
+        background-color: var(--nh-bg-gray) !important;
+        letter-spacing: -0.5px;
     }
     
-    /* Disabled 필드 (선박) */
+    /* === Disabled 필드 === */
     .stTextInput input:disabled {
-        color: #0a0a0a !important;
-        background-color: #f5f5f5 !important;
-        -webkit-text-fill-color: #0a0a0a !important;
+        color: var(--nh-text-disabled) !important;
+        background-color: var(--nh-disabled-bg) !important;
+        -webkit-text-fill-color: var(--nh-text-disabled) !important;
         opacity: 1 !important;
     }
     
-    /* 드롭다운 메뉴 */
+    /* === 드롭다운 메뉴 === */
     [role="listbox"],
     [data-baseweb="menu"],
     [data-baseweb="popover"] > div,
     .stSelectbox [role="option"] {
-        background-color: #ffffff !important;
+        background-color: var(--nh-bg-white) !important;
+        border: 1px solid var(--nh-border);
+        border-radius: 5px;
     }
     
-    /* 드롭다운 옵션 텍스트 */
+    /* === 드롭다운 옵션 === */
     [role="option"],
     [data-baseweb="menu"] li,
     .stSelectbox li {
-        background-color: #ffffff !important;
-        color: #0a0a0a !important;
-        font-size: 16px !important;
+        background-color: var(--nh-bg-white) !important;
+        color: var(--nh-text-dark) !important;
+        font-family: var(--nh-font) !important;
+        font-size: 14px !important;
+        letter-spacing: -0.5px;
     }
     
-    /* 드롭다운 옵션 호버 */
     [role="option"]:hover,
     [data-baseweb="menu"] li:hover {
-        background-color: #f0f0f0 !important;
-        color: #0a0a0a !important;
+        background-color: var(--nh-primary-light) !important;
+        color: var(--nh-text-dark) !important;
     }
     
-    /* Success/Info 메시지 */
+    /* === Success/Info 메시지 === */
     .stSuccess {
-        background: #f0f8f0;
-        border-left: 4px solid #2d7a2d;
+        background: #E8F5E9;
+        border-left: 4px solid #4CAF50;
         padding: 12px 16px;
-        border-radius: 2px;
+        border-radius: 5px;
+        font-family: var(--nh-font);
     }
     
     .stInfo {
-        background: #f0f4f8;
-        border-left: 4px solid #2d5a7a;
+        background: var(--nh-primary-light);
+        border-left: 4px solid var(--nh-primary);
         padding: 12px 16px;
-        border-radius: 2px;
+        border-radius: 5px;
+        font-family: var(--nh-font);
     }
     
-    /* 탭 스타일 - 밑줄 스타일 + 가독성 최우선 */
+    /* === 탭 스타일 === */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 24px;
+        gap: 0;
         background-color: transparent;
-        border-bottom: 2px solid #e0e0e0;
+        border-bottom: 1px solid var(--nh-border);
         padding-bottom: 0;
-        margin-bottom: 30px;
+        margin-bottom: 24px;
     }
     
-    /* 비활성 탭 - 검은색 텍스트 */
     .stTabs [data-baseweb="tab"] {
         background-color: transparent !important;
         border: none !important;
-        border-bottom: 4px solid transparent !important;
+        border-bottom: 3px solid transparent !important;
         border-radius: 0 !important;
-        padding: 20px 32px !important;
+        padding: 16px 24px !important;
         transition: all 0.2s ease;
     }
     
     .stTabs button[data-baseweb="tab"] {
-        color: #6b6b6b !important;
-        font-size: 36px !important;
-        font-weight: 600 !important;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
+        color: var(--nh-text-gray) !important;
+        font-family: var(--nh-font) !important;
+        font-size: 16px !important;
+        font-weight: 500 !important;
+        letter-spacing: -0.5px;
     }
     
     .stTabs [data-baseweb="tab"]:hover button {
-        color: #0a0a0a !important;
+        color: var(--nh-helios-blue) !important;
     }
     
-    /* 활성 탭 - 검은색 텍스트 + 밑줄 */
     .stTabs [aria-selected="true"] {
         background-color: transparent !important;
-        border-bottom: 4px solid #0a0a0a !important;
+        border-bottom: 3px solid var(--nh-primary) !important;
     }
     
     .stTabs [aria-selected="true"] button {
-        color: #0a0a0a !important;
+        color: var(--nh-primary) !important;
         font-weight: 700 !important;
     }
     
     .stTabs [data-baseweb="tab-panel"] {
-        padding-top: 30px;
+        padding-top: 24px;
     }
     
-    /* 반응형 테이블 컨테이너 - 전체 너비 활용 */
+    /* === 반응형 테이블 컨테이너 === */
     .responsive-table-container {
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
-        margin: 20px 0;
+        margin: 16px 0;
         width: 100%;
         max-width: 100%;
+        border-radius: 5px;
+        border: 1px solid var(--nh-border);
+        background: var(--nh-bg-white);
     }
     
     .responsive-table-container table {
@@ -297,7 +324,7 @@ st.markdown("""
         width: 100%;
     }
     
-    /* 클릭 가능한 셀 */
+    /* === 클릭 가능한 셀 === */
     .clickable-cell {
         cursor: pointer;
         transition: all 0.2s ease;
@@ -305,10 +332,10 @@ st.markdown("""
     
     .clickable-cell:hover {
         opacity: 0.8;
-        transform: scale(1.05);
+        transform: scale(1.02);
     }
     
-    /* 모달 스타일 */
+    /* === 모달 스타일 === */
     .modal {
         display: none;
         position: fixed;
@@ -318,26 +345,26 @@ st.markdown("""
         width: 100%;
         height: 100%;
         overflow: auto;
-        background-color: rgba(0, 0, 0, 0.6);
-        animation: fadeIn 0.3s ease;
+        background-color: rgba(14, 14, 44, 0.5);
+        animation: fadeIn 0.2s ease;
     }
     
     .modal-content {
-        background-color: #ffffff;
+        background-color: var(--nh-bg-white);
         margin: 5% auto;
         padding: 0;
-        border-radius: 8px;
+        border-radius: 5px;
         width: 90%;
         max-width: 900px;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-        animation: slideDown 0.3s ease;
+        box-shadow: 0 4px 24px rgba(14, 14, 44, 0.15);
+        animation: slideDown 0.2s ease;
     }
     
     .modal-header {
-        background: #1a1a1a;
+        background: var(--nh-helios-blue);
         color: white;
-        padding: 20px 24px;
-        border-radius: 8px 8px 0 0;
+        padding: 16px 20px;
+        border-radius: 5px 5px 0 0;
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -345,91 +372,98 @@ st.markdown("""
     
     .modal-header h2 {
         margin: 0;
-        font-size: 20px;
-        font-weight: 600;
+        font-family: var(--nh-font);
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: -0.5px;
     }
     
     .modal-body {
-        padding: 24px;
+        padding: 20px;
         max-height: 60vh;
         overflow-y: auto;
     }
     
     .close-modal {
         color: white;
-        font-size: 32px;
+        font-size: 24px;
         font-weight: bold;
         cursor: pointer;
         background: none;
         border: none;
         padding: 0;
-        width: 32px;
-        height: 32px;
-        line-height: 32px;
+        width: 28px;
+        height: 28px;
+        line-height: 28px;
         text-align: center;
         transition: all 0.2s ease;
+        border-radius: 4px;
     }
     
     .close-modal:hover {
-        color: #ff6b6b;
-        transform: rotate(90deg);
+        background: rgba(255, 255, 255, 0.2);
     }
     
     .modal-info {
-        background: #f8f9fa;
+        background: var(--nh-bg-gray);
         padding: 16px;
-        border-radius: 4px;
-        margin-bottom: 20px;
-        border-left: 4px solid #1a1a1a;
+        border-radius: 5px;
+        margin-bottom: 16px;
+        border-left: 4px solid var(--nh-helios-blue);
     }
     
     .modal-info-item {
         display: inline-block;
         margin-right: 24px;
         font-size: 14px;
+        font-family: var(--nh-font);
     }
     
     .modal-info-label {
-        font-weight: 600;
-        color: #1a1a1a;
+        font-weight: 500;
+        color: var(--nh-helios-blue);
     }
     
     .modal-info-value {
-        color: #666666;
+        color: var(--nh-text-gray);
         margin-left: 8px;
     }
     
     .modal-table {
         width: 100%;
         border-collapse: collapse;
-        margin-top: 16px;
+        margin-top: 12px;
     }
     
     .modal-table th {
-        background: #f8f9fa;
-        color: #1a1a1a;
-        padding: 12px;
+        background: var(--nh-helios-blue);
+        color: #FAFCFE;
+        padding: 10px 12px;
         text-align: left;
-        font-weight: 600;
-        border-bottom: 2px solid #e0e0e0;
-        font-size: 14px;
+        font-family: var(--nh-font);
+        font-weight: 700;
+        font-size: 12px;
+        letter-spacing: -0.5px;
     }
     
     .modal-table td {
-        padding: 12px;
-        border-bottom: 1px solid #f0f0f0;
-        color: #2d2d2d;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--nh-border);
+        color: var(--nh-text-dark);
+        font-family: var(--nh-font);
         font-size: 14px;
+        letter-spacing: -0.5px;
     }
     
     .modal-table tr:hover {
-        background: #fafafa;
+        background: var(--nh-bg-gray);
     }
     
     .loading-spinner {
         text-align: center;
         padding: 40px;
-        color: #666666;
+        color: var(--nh-text-gray);
+        font-family: var(--nh-font);
     }
     
     @keyframes fadeIn {
@@ -439,7 +473,7 @@ st.markdown("""
     
     @keyframes slideDown {
         from { 
-            transform: translateY(-50px);
+            transform: translateY(-20px);
             opacity: 0;
         }
         to { 
@@ -448,10 +482,10 @@ st.markdown("""
         }
     }
     
-    /* 모바일 최적화 (768px 이하) */
+    /* === 모바일 최적화 (768px 이하) === */
     @media screen and (max-width: 768px) {
         h1 {
-            font-size: 24px !important;
+            font-size: 20px !important;
         }
         
         h3 {
@@ -462,38 +496,35 @@ st.markdown("""
             padding: 0.5rem;
         }
         
-        /* 테이블 폰트 크기 축소 */
         .responsive-table-container table {
-            font-size: 11px;
+            font-size: 12px;
         }
         
         .responsive-table-container th,
         .responsive-table-container td {
-            padding: 8px 4px !important;
-            font-size: 11px !important;
+            padding: 8px 6px !important;
+            font-size: 12px !important;
         }
         
         .responsive-table-container th[rowspan] {
             font-size: 12px !important;
-            padding: 10px 6px !important;
+            padding: 8px 6px !important;
         }
         
-        /* 범례 모바일 최적화 */
         .legend-container {
             grid-template-columns: 1fr !important;
-            gap: 12px !important;
+            gap: 8px !important;
         }
         
         .legend-container > div {
-            font-size: 13px !important;
+            font-size: 12px !important;
         }
         
         .legend-container span[style*="width: 24px"] {
-            width: 20px !important;
-            height: 20px !important;
+            width: 18px !important;
+            height: 18px !important;
         }
         
-        /* 모달 모바일 최적화 */
         .modal-content {
             width: 95%;
             margin: 10% auto;
@@ -871,6 +902,9 @@ if query_button:
                 # Azure SQL에서는 Cross-database 쿼리 불가 → Python에서 필터링
                 tsl_arrival_filter = ""
                 tsl_arrival_join = ""
+                
+                # 생성처 필터는 승객 분석 탭에서만 적용 (여기서는 빈 문자열)
+                origin_country_filter = ""
                 tsl_valid_schedule_ids = None  # TSL 도착지 필터용
                 
                 if is_tsl and selected_destination != '전체':
@@ -956,6 +990,7 @@ if query_button:
                           AND t.status NOT LIKE 'REFUND%'
                           AND g.code IS NOT NULL
                           {tsl_arrival_filter}
+                          {origin_country_filter}
                         GROUP BY t.departure_schedule_id, g.code
                     """
                 else:
@@ -989,6 +1024,7 @@ if query_button:
                               AND t.on_boarding_room_id IS NOT NULL
                               AND t.status NOT LIKE 'REFUND%'
                               {tsl_arrival_filter}
+                              {origin_country_filter}
                             GROUP BY t.departure_schedule_id, t.on_boarding_room_id, g.code
                         )
                         SELECT 
@@ -1024,10 +1060,13 @@ if query_button:
                           AND t.status NOT LIKE 'REFUND%'
                           AND g.code IS NOT NULL
                           {tsl_arrival_filter}
+                          {origin_country_filter}
                         GROUP BY t.departure_schedule_id, g.code
                     """
                 else:
                     # PSMC: 객실 기반 - 정원 제한 적용
+                    # 확정: grade_price_detail_by_age_group_id 경로로 등급 조회 (on_boarding_room_id 조건 없음)
+                    # 블록: rooms 기반으로 정원 제한 적용
                     passenger_query = f"""
                         WITH confirmed_count AS (
                             SELECT 
@@ -1035,17 +1074,18 @@ if query_button:
                                 g.code AS grade,
                                 COUNT(*) AS confirmed_passengers
                             FROM tickets t
-                            INNER JOIN rooms r ON t.on_boarding_room_id = r.id
-                            INNER JOIN grades g ON r.grade_id = g.id
+                            LEFT JOIN grade_price_detail_by_age_groups gpdag ON t.grade_price_detail_by_age_group_id = gpdag.id
+                            LEFT JOIN grade_price_details gpd ON gpdag.grade_price_detail_id = gpd.id
+                            LEFT JOIN grade_prices gp ON gpd.grade_price_id = gp.id
+                            LEFT JOIN grades g ON gp.grade_id = g.id
                             {tsl_arrival_join}
                             WHERE t.departure_schedule_id IN ({schedule_ids})
                               AND t.deleted_at IS NULL
-                              AND r.deleted_at IS NULL
-                              AND g.deleted_at IS NULL
-                              AND t.on_boarding_room_id IS NOT NULL
                               AND t.is_temporary = 0
                               AND t.status NOT LIKE 'REFUND%'
+                              AND g.code IS NOT NULL
                               {tsl_arrival_filter}
+                              {origin_country_filter}
                             GROUP BY t.departure_schedule_id, g.code
                         ),
                         room_blocked AS (
@@ -1073,6 +1113,7 @@ if query_button:
                               AND t.is_temporary = 1
                               AND t.status NOT LIKE 'REFUND%'
                               {tsl_arrival_filter}
+                              {origin_country_filter}
                             GROUP BY t.departure_schedule_id, t.on_boarding_room_id, g.code
                         ),
                         blocked_count AS (
@@ -1119,6 +1160,7 @@ if query_button:
                           AND t.status NOT LIKE 'REFUND%'
                           AND g.code IS NOT NULL
                           {tsl_arrival_filter}
+                          {origin_country_filter}
                         ORDER BY schedule_id, grade, room_no
                     """
                 else:
@@ -1153,6 +1195,7 @@ if query_button:
                               AND t.on_boarding_room_id IS NOT NULL
                               AND t.status NOT LIKE 'REFUND%'
                               {tsl_arrival_filter}
+                              {origin_country_filter}
                             GROUP BY t.departure_schedule_id, t.on_boarding_room_id, r.room_number, g.code
                         )
                         SELECT 
@@ -1206,14 +1249,14 @@ if query_button:
                 # 4. 승객 분석 데이터 조회 (확정 승객만)
                 # 성별, 국적, 연령대 분석용
                 # birth_day는 datetimeoffset 타입이라 CONVERT로 date로 변환
-                # PSMC: on_boarding_room_id IS NOT NULL 조건 추가 (승객 탭과 동일)
-                room_filter = "" if is_seat_based else "AND t.on_boarding_room_id IS NOT NULL"
                 passenger_analysis_query = f"""
                     SELECT 
                         t.departure_schedule_id AS schedule_id,
                         p.sex,
                         p.nationality,
-                        CONVERT(date, p.birth_day) AS birth_day
+                        CONVERT(date, p.birth_day) AS birth_day,
+                        ISNULL(t.is_issued, 0) AS is_issued,
+                        t.ticket_number
                     FROM tickets t
                     INNER JOIN reservation_passengers rp ON t.reservation_passenger_id = rp.id
                     INNER JOIN passengers p ON rp.passenger_id = p.id
@@ -1221,7 +1264,6 @@ if query_button:
                       AND t.is_temporary = 0
                       AND t.deleted_at IS NULL
                       AND t.status NOT LIKE 'REFUND%'
-                      {room_filter}
                       AND rp.deleted_at IS NULL
                       AND p.deleted_at IS NULL
                       {tsl_arrival_filter}
@@ -1345,52 +1387,51 @@ if query_button:
                 final_df = final_df[ordered_cols]
                 
                 # 12. 깔끔한 테이블 생성
-                st.markdown(f'<div style="background: #f8f9fa; padding: 16px 24px; border-radius: 4px; color: #1a1a1a; font-weight: 600; font-size: 16px; margin: 20px 0; border-left: 4px solid #1a1a1a;">✓ {len(df_schedules)}개 스케줄 조회 완료</div>', unsafe_allow_html=True)
+                st.markdown(f'<div style="background: #F3F7F9; padding: 12px 20px; border-radius: 5px; color: #232A5E; font-weight: 500; font-size: 14px; margin: 16px 0; border-left: 4px solid #232A5E; font-family: Noto Sans KR, sans-serif;">✓ {len(df_schedules)}개 스케줄 조회 완료</div>', unsafe_allow_html=True)
                 
-                # HTML 테이블 생성 (반응형 컨테이너로 감싸기)
-                html_table = '<div class="responsive-table-container"><table style="width:100%; border-collapse: collapse; background: white; border: 1px solid #e0e0e0;">'
+                # HTML 테이블 생성 (피그마 디자인 시스템)
+                html_table = '<div class="responsive-table-container"><table style="width:100%; border-collapse: collapse; background: #FFFFFF; font-family: Noto Sans KR, sans-serif;">'
                 
-                # 헤더 1행: 등급명 - Palantir 스타일 (등급 간 구분선 추가)
-                html_table += '<thead><tr><th rowspan="2" class="sticky-date-header" style="background: #0a0a0a; color: #ffffff; padding: 22px; border: none; border-right: 2px solid #2a2a2a; font-weight: 500; font-size: 18px; text-transform: uppercase; letter-spacing: 1px;">Date</th>'
+                # 헤더 1행: 등급명 - NEOHELIOS 디자인 시스템
+                html_table += '<thead><tr><th rowspan="2" class="sticky-date-header" style="background: #232A5E; color: #FAFCFE; padding: 12px 10px; border: none; border-right: 1px solid #3a4a7e; font-weight: 700; font-size: 12px; letter-spacing: -0.5px;">날짜</th>'
                 for idx, grade in enumerate(existing_grades):
                     if grade == '총계':
-                        bg_color = '#1a1a1a'
+                        bg_color = '#1a2148'
                     else:
-                        bg_color = '#0a0a0a'
+                        bg_color = '#232A5E'
                     
-                    # 마지막 등급이 아니면 진한 구분선
                     is_last_grade = (idx == len(existing_grades) - 1)
-                    border_right = '1px solid #2a2a2a' if is_last_grade else '2px solid #4a4a4a'
+                    border_right = '1px solid #3a4a7e' if is_last_grade else '1px solid #3a4a7e'
                     
-                    html_table += f'<th colspan="3" style="background: {bg_color}; color: #ffffff; padding: 22px; border: none; border-right: {border_right}; font-weight: 500; font-size: 18px; text-transform: uppercase; letter-spacing: 1px;">{grade}</th>'
+                    html_table += f'<th colspan="3" style="background: {bg_color}; color: #FAFCFE; padding: 12px 10px; border: none; border-right: {border_right}; font-weight: 700; font-size: 12px; letter-spacing: -0.5px;">{grade}</th>'
                 html_table += '</tr>'
                 
-                # 헤더 2행: 확정/블록/공실 - 공실 배경 강조 + 등급 간 구분선
+                # 헤더 2행: 확정/블록/공실
                 html_table += '<tr>'
                 for idx, grade in enumerate(existing_grades):
                     is_last_grade = (idx == len(existing_grades) - 1)
-                    grade_separator = '1px solid #e0e0e0' if is_last_grade else '2px solid #d0d0d0'
+                    grade_separator = '1px solid #DAE0E3' if is_last_grade else '1px solid #c8d0d4'
                     
-                    html_table += '<th style="background: #f5f5f5; color: #6b6b6b; text-align: center; padding: 16px; font-weight: 600; border: none; border-right: 1px solid #e0e0e0; border-top: 1px solid #e0e0e0; font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px;">확정</th>'
-                    html_table += '<th style="background: #f5f5f5; color: #6b6b6b; text-align: center; padding: 16px; font-weight: 600; border: none; border-right: 1px solid #e0e0e0; border-top: 1px solid #e0e0e0; font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px;">블록</th>'
-                    html_table += f'<th style="background: #fffef5; color: #6b6b6b; text-align: center; padding: 16px; font-weight: 600; border: none; border-right: {grade_separator}; border-top: 1px solid #e0e0e0; font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px;">공실</th>'
+                    html_table += '<th style="background: #F3F7F9; color: #232A5E; text-align: center; padding: 10px 8px; font-weight: 500; border: none; border-right: 1px solid #DAE0E3; border-bottom: 1px solid #DAE0E3; font-size: 12px; letter-spacing: -0.5px;">확정</th>'
+                    html_table += '<th style="background: #F3F7F9; color: #232A5E; text-align: center; padding: 10px 8px; font-weight: 500; border: none; border-right: 1px solid #DAE0E3; border-bottom: 1px solid #DAE0E3; font-size: 12px; letter-spacing: -0.5px;">블록</th>'
+                    html_table += f'<th style="background: #FFFBEB; color: #232A5E; text-align: center; padding: 10px 8px; font-weight: 500; border: none; border-right: {grade_separator}; border-bottom: 1px solid #DAE0E3; font-size: 12px; letter-spacing: -0.5px;">공실</th>'
                 html_table += '</tr></thead>'
                 
                 # 선박 정보 (항로에 따라 고정)
                 vessel_name = selected_vessel
                 
-                # 바디 - Palantir 스타일
+                # 바디 - NEOHELIOS 디자인 시스템
                 html_table += '<tbody>'
                 for idx, row in final_df.iterrows():
-                    # 교차 행 배경 - 더 subtle하게
-                    row_bg = '#ffffff' if idx % 2 == 0 else '#fafafa'
+                    # 교차 행 배경
+                    row_bg = '#FFFFFF' if idx % 2 == 0 else '#F9FAFB'
                     # schedule_id NaN 처리
                     schedule_id_raw = row.get('schedule_id', 0)
                     schedule_id = int(schedule_id_raw) if pd.notna(schedule_id_raw) else 0
                     date_raw = row.get('date_raw', '')
                     
-                    html_table += '<tr style="border-bottom: 1px solid #efefef; transition: background 0.2s ease;">'
-                    html_table += f'<td class="sticky-date-cell" style="background: {row_bg}; color: #0a0a0a; font-weight: 500; padding: 22px; border: none; border-right: 2px solid #d0d0d0; font-size: 17px;">{row["날짜"]}</td>'
+                    html_table += '<tr style="border-bottom: 1px solid #DAE0E3; transition: background 0.15s ease;">'
+                    html_table += f'<td class="sticky-date-cell" style="background: {row_bg}; color: #0E0E2C; font-weight: 500; padding: 10px; border: none; border-right: 1px solid #DAE0E3; font-size: 14px; letter-spacing: -0.5px;">{row["날짜"]}</td>'
                     
                     for grade_idx, grade in enumerate(existing_grades):
                         confirmed = int(row.get(f'{grade}_확정', 0))
@@ -1398,19 +1439,18 @@ if query_button:
                         vacant = int(row.get(f'{grade}_공실', 0))
                         date_display = row['날짜']
                         
-                        # 등급 간 구분선 (각 등급의 공실 컬럼 오른쪽)
+                        # 등급 간 구분선
                         is_last_grade = (grade_idx == len(existing_grades) - 1)
-                        grade_separator = '1px solid #efefef' if is_last_grade else '2px solid #d0d0d0'
+                        grade_separator = '1px solid #DAE0E3' if is_last_grade else '1px solid #c8d0d4'
                         
                         # 클릭 가능 여부 (총계는 클릭 불가, schedule_id가 없으면 불가)
                         is_clickable = grade != '총계' and schedule_id > 0
                         
                         if is_clickable:
-                            # JavaScript onclick으로 모달 표시 (페이지 새로고침 없음!)
-                            # status는 영어로 전달 (인코딩 문제 방지)
+                            # JavaScript onclick으로 모달 표시
                             confirmed_link = f'<span onclick="openRoomModal({schedule_id}, \'{date_display}\', \'{grade}\', \'confirmed\')" style="cursor: pointer; display: block;" title="클릭하여 상세보기">{confirmed}</span>'
                             
-                            # PSTL/PSGR 좌석 기반: 블록과 공실은 클릭 불가 (상세 데이터 의미 없음)
+                            # PSTL/PSGR 좌석 기반: 블록과 공실은 클릭 불가
                             if is_seat_based:
                                 blocked_link = str(blocked)
                                 vacant_link = str(vacant)
@@ -1424,20 +1464,20 @@ if query_button:
                             vacant_link = str(vacant)
                             cell_class = ''
                         
-                        # 확정: 다크 컬러
-                        html_table += f'<td {cell_class} style="background: {row_bg}; color: #0a0a0a; text-align: center; padding: 20px; font-weight: 600; border: none; border-right: 1px solid #efefef; font-size: 18px;">{confirmed_link}</td>'
+                        # 확정: Primary 색상
+                        html_table += f'<td {cell_class} style="background: {row_bg}; color: #0E0E2C; text-align: center; padding: 10px; font-weight: 500; border: none; border-right: 1px solid #DAE0E3; font-size: 14px;">{confirmed_link}</td>'
                         
                         # 블록: 그레이 톤
-                        html_table += f'<td {cell_class} style="background: {row_bg}; color: #6b6b6b; text-align: center; padding: 20px; font-weight: 500; border: none; border-right: 1px solid #efefef; font-size: 18px;">{blocked_link}</td>'
+                        html_table += f'<td {cell_class} style="background: {row_bg}; color: #88949C; text-align: center; padding: 10px; font-weight: 400; border: none; border-right: 1px solid #DAE0E3; font-size: 14px;">{blocked_link}</td>'
                         
-                        # 공실: 옅은 노란색 배경, 0이면 예약불가 강조, 등급 간 구분선
+                        # 공실: 옅은 노란색 배경, 0이면 예약불가 강조
                         if vacant == 0:
-                            # 예약 불가 - 빨간색 강조
-                            vacant_style = f'background: #fff5f5; color: #c62828; text-align: center; padding: 20px; font-weight: 700; border: none; border-right: {grade_separator}; border-left: 3px solid #ef5350; font-size: 19px;'
+                            # 예약 불가 - Alert Red 강조
+                            vacant_style = f'background: #FEF2F2; color: #EA3336; text-align: center; padding: 10px; font-weight: 700; border: none; border-right: {grade_separator}; border-left: 3px solid #EA3336; font-size: 14px;'
                         else:
                             # 일반 공실 - 옅은 노란색 배경
-                            yellow_bg = '#fffef5' if row_bg == '#ffffff' else '#fffdf0'
-                            vacant_style = f'background: {yellow_bg}; color: #1565c0; text-align: center; padding: 20px; font-weight: 600; border: none; border-right: {grade_separator}; font-size: 18px;'
+                            yellow_bg = '#FFFBEB' if row_bg == '#FFFFFF' else '#FEF9E7'
+                            vacant_style = f'background: {yellow_bg}; color: #436CFC; text-align: center; padding: 10px; font-weight: 500; border: none; border-right: {grade_separator}; font-size: 14px;'
                         
                         html_table += f'<td {cell_class} style="{vacant_style}">{vacant_link}</td>'
                     
@@ -1751,17 +1791,42 @@ if 'query_result' in st.session_state:
             key="excel_download_top"
         )
     
+    # 탭 상태 초기화
+    if 'selected_tab' not in st.session_state:
+        st.session_state.selected_tab = 0
+    
     # 탭 생성
     tab1, tab2, tab3 = st.tabs([tab1_name, "승객", "📊 승객 분석"])
+    
+    # JavaScript로 이전에 선택한 탭으로 이동
+    selected_tab_idx = st.session_state.get('selected_tab', 0)
+    if selected_tab_idx > 0:
+        st.components.v1.html(f"""
+            <script>
+                // 탭 클릭 시뮬레이션
+                setTimeout(function() {{
+                    const tabs = window.parent.document.querySelectorAll('[data-baseweb="tab"]');
+                    if (tabs && tabs.length > {selected_tab_idx}) {{
+                        tabs[{selected_tab_idx}].click();
+                    }}
+                }}, 100);
+            </script>
+        """, height=0)
     
     with tab1:
         # 객실 테이블 렌더링 (JavaScript 모달 포함)
         room_data_json = json.dumps(result.get('room_details', []), ensure_ascii=False)
         
-        # 테이블 + 모달 + JavaScript를 하나의 HTML로 합침
+        # 테이블 + 모달 + JavaScript를 하나의 HTML로 합침 (NEOHELIOS 디자인)
         full_html = f'''
         <meta charset="UTF-8">
+        <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
         <style>
+            * {{
+                font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
+                letter-spacing: -0.5px;
+            }}
+            
             /* 모달 오버레이 */
             #js-modal-overlay {{
                 display: none;
@@ -1770,7 +1835,7 @@ if 'query_result' in st.session_state:
                 left: 0;
                 width: 100vw;
                 height: 100vh;
-                background: rgba(0, 0, 0, 0.75);
+                background: rgba(14, 14, 44, 0.5);
                 z-index: 999998;
             }}
             #js-modal-overlay.show {{
@@ -1780,47 +1845,49 @@ if 'query_result' in st.session_state:
                 padding-top: 20px;
             }}
             
-            /* 모달 박스 - 크기 확대 */
+            /* 모달 박스 */
             #js-modal-box {{
-                background: white;
-                border-radius: 12px;
+                background: #FFFFFF;
+                border-radius: 5px;
                 width: 95%;
                 max-width: 800px;
                 max-height: 90vh;
                 overflow: hidden;
-                box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5);
+                box-shadow: 0 4px 24px rgba(14, 14, 44, 0.15);
             }}
             
             /* 모달 헤더 */
             #js-modal-header {{
-                background: #1a1a1a;
-                color: white;
-                padding: 22px 28px;
+                background: #232A5E;
+                color: #FAFCFE;
+                padding: 16px 20px;
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
             }}
             #js-modal-header h3 {{
                 margin: 0;
-                font-size: 20px;
-                font-weight: 600;
+                font-size: 16px;
+                font-weight: 700;
             }}
             #js-modal-close {{
                 background: none;
                 border: none;
-                color: white;
-                font-size: 32px;
+                color: #FAFCFE;
+                font-size: 24px;
                 cursor: pointer;
-                padding: 0 8px;
+                padding: 4px 8px;
                 line-height: 1;
+                border-radius: 4px;
+                transition: background 0.2s;
             }}
             #js-modal-close:hover {{
-                color: #ff6b6b;
+                background: rgba(255, 255, 255, 0.2);
             }}
             
-            /* 모달 바디 - 크기 확대 */
+            /* 모달 바디 */
             #js-modal-body {{
-                padding: 28px;
+                padding: 20px;
                 max-height: 70vh;
                 overflow-y: auto;
             }}
@@ -1829,29 +1896,31 @@ if 'query_result' in st.session_state:
                 border-collapse: collapse;
             }}
             #js-modal-body th {{
-                background: #f5f5f5;
-                padding: 14px 16px;
-                border: 1px solid #ddd;
+                background: #232A5E;
+                color: #FAFCFE;
+                padding: 10px 12px;
+                border: none;
                 text-align: center;
-                font-weight: 600;
-                font-size: 16px;
+                font-weight: 700;
+                font-size: 12px;
             }}
             #js-modal-body td {{
-                padding: 12px 16px;
-                border: 1px solid #ddd;
+                padding: 10px 12px;
+                border-bottom: 1px solid #DAE0E3;
                 text-align: center;
-                font-size: 16px;
+                font-size: 14px;
+                color: #0E0E2C;
             }}
             #js-modal-body tr:nth-child(even) {{
-                background: #fafafa;
+                background: #F9FAFB;
             }}
             #js-modal-body tr:hover {{
-                background: #f0f0f0;
+                background: #F3F7F9;
             }}
             
             /* 클릭 가능 셀 */
             .clickable-cell:hover {{
-                background: #f0f0f0 !important;
+                background: #F3F6FF !important;
                 cursor: pointer;
             }}
             
@@ -1862,6 +1931,8 @@ if 'query_result' in st.session_state:
                 overflow-y: auto;
                 max-height: calc(100vh - 100px);
                 -webkit-overflow-scrolling: touch;
+                border-radius: 5px;
+                border: 1px solid #DAE0E3;
             }}
             
             /* 헤더 고정 (상하 스크롤 시) */
@@ -1874,7 +1945,7 @@ if 'query_result' in st.session_state:
                 top: 0;
             }}
             .responsive-table-container thead tr:nth-child(2) th {{
-                top: 60px;
+                top: 46px;
             }}
             
             /* 첫 번째 열 고정 (좌우 스크롤 시) */
@@ -1882,7 +1953,7 @@ if 'query_result' in st.session_state:
                 position: sticky !important;
                 left: 0 !important;
                 z-index: 20 !important;
-                background: #0a0a0a !important;
+                background: #232A5E !important;
             }}
             .sticky-date-cell {{
                 position: sticky !important;
@@ -1988,71 +2059,71 @@ if 'query_result' in st.session_state:
         # scrolling=True로 모바일 가로 스크롤 허용
         components.html(full_html, height=table_height, scrolling=True)
         
-        # 범례 - 객실용
+        # 범례 - 객실용 (NEOHELIOS 디자인)
         st.markdown("""
-        <div style="margin-top: 40px; padding: 36px; background: #ffffff; border-radius: 2px; border: 1px solid #e0e0e0;">
-            <div style="color: #6b6b6b; font-weight: 600; font-size: 14px; margin-bottom: 28px; text-transform: uppercase; letter-spacing: 1.5px;">범례</div>
-            <div class="legend-container" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 28px;">
-                        <div style="display: flex; align-items: center;">
-                    <span style="display: inline-block; width: 28px; height: 28px; background: #0a0a0a; border-radius: 1px; margin-right: 14px;"></span>
-                    <span style="color: #0a0a0a; font-size: 16px; font-weight: 500;">확정 (실제 명단 입력 완료)</span>
-                        </div>
-                        <div style="display: flex; align-items: center;">
-                    <span style="display: inline-block; width: 28px; height: 28px; background: #6b6b6b; border-radius: 1px; margin-right: 14px;"></span>
-                    <span style="color: #6b6b6b; font-size: 16px; font-weight: 500;">블록 (점유만 된 상태)</span>
-                        </div>
-                        <div style="display: flex; align-items: center;">
-                    <span style="display: inline-block; width: 28px; height: 28px; background: #fffef5; border: 1px solid #1565c0; border-radius: 1px; margin-right: 14px;"></span>
-                    <span style="color: #1565c0; font-size: 16px; font-weight: 500;">공실 (예약 가능한 객실)</span>
-                        </div>
-                        <div style="display: flex; align-items: center;">
-                    <span style="display: inline-block; width: 28px; height: 28px; background: #c62828; border-radius: 1px; margin-right: 14px;"></span>
-                    <span style="color: #c62828; font-size: 16px; font-weight: 600;">예약불가 (공실 0개)</span>
-                        </div>
-                    </div>
+        <div style="margin-top: 24px; padding: 20px; background: #FFFFFF; border-radius: 5px; border: 1px solid #DAE0E3; font-family: 'Noto Sans KR', sans-serif;">
+            <div style="color: #232A5E; font-weight: 700; font-size: 12px; margin-bottom: 16px; letter-spacing: -0.5px;">범례</div>
+            <div class="legend-container" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">
+                <div style="display: flex; align-items: center;">
+                    <span style="display: inline-block; width: 20px; height: 20px; background: #0E0E2C; border-radius: 3px; margin-right: 10px;"></span>
+                    <span style="color: #0E0E2C; font-size: 14px; font-weight: 500;">확정 (명단 입력 완료)</span>
                 </div>
-                """, unsafe_allow_html=True)
+                <div style="display: flex; align-items: center;">
+                    <span style="display: inline-block; width: 20px; height: 20px; background: #88949C; border-radius: 3px; margin-right: 10px;"></span>
+                    <span style="color: #88949C; font-size: 14px; font-weight: 500;">블록 (점유 상태)</span>
+                </div>
+                <div style="display: flex; align-items: center;">
+                    <span style="display: inline-block; width: 20px; height: 20px; background: #FFFBEB; border: 1px solid #436CFC; border-radius: 3px; margin-right: 10px;"></span>
+                    <span style="color: #436CFC; font-size: 14px; font-weight: 500;">공실 (예약 가능)</span>
+                </div>
+                <div style="display: flex; align-items: center;">
+                    <span style="display: inline-block; width: 20px; height: 20px; background: #EA3336; border-radius: 3px; margin-right: 10px;"></span>
+                    <span style="color: #EA3336; font-size: 14px; font-weight: 700;">예약불가 (공실 0개)</span>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
                 
     with tab2:
         # 승객 테이블 생성
         final_df_passengers = result['final_df_passengers']
         existing_grades = result['existing_grades']
         
-        # 승객 테이블 HTML 생성
-        html_pass_table = '<div class="responsive-table-container"><table style="width: 100%; border-collapse: collapse; background: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">'
+        # 승객 테이블 HTML 생성 (NEOHELIOS 디자인)
+        html_pass_table = '<div class="responsive-table-container"><table style="width: 100%; border-collapse: collapse; background: #FFFFFF; font-family: Noto Sans KR, sans-serif;">'
         
         # 헤더 1행: 등급명
-        html_pass_table += '<thead><tr><th rowspan="2" class="sticky-date-header" style="background: #0a0a0a; color: #ffffff; padding: 22px; border: none; border-right: 2px solid #2a2a2a; font-weight: 500; font-size: 18px; text-transform: uppercase; letter-spacing: 1px;">Date</th>'
+        html_pass_table += '<thead><tr><th rowspan="2" class="sticky-date-header" style="background: #232A5E; color: #FAFCFE; padding: 12px 10px; border: none; border-right: 1px solid #3a4a7e; font-weight: 700; font-size: 12px; letter-spacing: -0.5px;">날짜</th>'
         for idx, grade in enumerate(existing_grades):
             if grade == '총계':
-                bg_color = '#1a1a1a'
+                bg_color = '#1a2148'
             else:
-                bg_color = '#0a0a0a'
+                bg_color = '#232A5E'
             
             is_last_grade = (idx == len(existing_grades) - 1)
-            border_right = '1px solid #2a2a2a' if is_last_grade else '2px solid #4a4a4a'
+            border_right = '1px solid #3a4a7e' if is_last_grade else '1px solid #3a4a7e'
             
-            html_pass_table += f'<th colspan="3" style="background: {bg_color}; color: #ffffff; padding: 22px; border: none; border-right: {border_right}; font-weight: 500; font-size: 18px; text-transform: uppercase; letter-spacing: 1px;">{grade}</th>'
+            html_pass_table += f'<th colspan="3" style="background: {bg_color}; color: #FAFCFE; padding: 12px 10px; border: none; border-right: {border_right}; font-weight: 700; font-size: 12px; letter-spacing: -0.5px;">{grade}</th>'
         html_pass_table += '</tr>'
         
         # 헤더 2행: 확정/블록/잔여
         html_pass_table += '<tr>'
         for idx, grade in enumerate(existing_grades):
             is_last_grade = (idx == len(existing_grades) - 1)
-            grade_separator = '1px solid #e0e0e0' if is_last_grade else '2px solid #d0d0d0'
+            grade_separator = '1px solid #DAE0E3' if is_last_grade else '1px solid #c8d0d4'
             
-            html_pass_table += '<th style="background: #f5f5f5; color: #6b6b6b; text-align: center; padding: 16px; font-weight: 600; border: none; border-right: 1px solid #e0e0e0; border-top: 1px solid #e0e0e0; font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px;">확정</th>'
-            html_pass_table += '<th style="background: #f5f5f5; color: #6b6b6b; text-align: center; padding: 16px; font-weight: 600; border: none; border-right: 1px solid #e0e0e0; border-top: 1px solid #e0e0e0; font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px;">블록</th>'
-            html_pass_table += f'<th style="background: #fffef5; color: #6b6b6b; text-align: center; padding: 16px; font-weight: 600; border: none; border-right: {grade_separator}; border-top: 1px solid #e0e0e0; font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px;">잔여</th>'
+            html_pass_table += '<th style="background: #F3F7F9; color: #232A5E; text-align: center; padding: 10px 8px; font-weight: 500; border: none; border-right: 1px solid #DAE0E3; border-bottom: 1px solid #DAE0E3; font-size: 12px; letter-spacing: -0.5px;">확정</th>'
+            html_pass_table += '<th style="background: #F3F7F9; color: #232A5E; text-align: center; padding: 10px 8px; font-weight: 500; border: none; border-right: 1px solid #DAE0E3; border-bottom: 1px solid #DAE0E3; font-size: 12px; letter-spacing: -0.5px;">블록</th>'
+            html_pass_table += f'<th style="background: #FFFBEB; color: #232A5E; text-align: center; padding: 10px 8px; font-weight: 500; border: none; border-right: {grade_separator}; border-bottom: 1px solid #DAE0E3; font-size: 12px; letter-spacing: -0.5px;">잔여</th>'
         html_pass_table += '</tr></thead>'
         
         # 바디
         html_pass_table += '<tbody>'
         for idx, row in final_df_passengers.iterrows():
-            row_bg = '#ffffff' if idx % 2 == 0 else '#fafafa'
+            row_bg = '#FFFFFF' if idx % 2 == 0 else '#F9FAFB'
             
-            html_pass_table += '<tr style="border-bottom: 1px solid #efefef; transition: background 0.2s ease;">'
-            html_pass_table += f'<td class="sticky-date-cell" style="background: {row_bg}; color: #0a0a0a; font-weight: 500; padding: 22px; border: none; border-right: 2px solid #d0d0d0; font-size: 17px;">{row["날짜"]}</td>'
+            html_pass_table += '<tr style="border-bottom: 1px solid #DAE0E3; transition: background 0.15s ease;">'
+            html_pass_table += f'<td class="sticky-date-cell" style="background: {row_bg}; color: #0E0E2C; font-weight: 500; padding: 10px; border: none; border-right: 1px solid #DAE0E3; font-size: 14px; letter-spacing: -0.5px;">{row["날짜"]}</td>'
             
             for idx_g, grade in enumerate(existing_grades):
                 confirmed = int(row.get(f'{grade}_확정', 0))
@@ -2060,20 +2131,20 @@ if 'query_result' in st.session_state:
                 remaining = int(row.get(f'{grade}_잔여', 0))
                 
                 is_last_grade = (idx_g == len(existing_grades) - 1)
-                grade_separator = '1px solid #efefef' if is_last_grade else '2px solid #d0d0d0'
+                grade_separator = '1px solid #DAE0E3' if is_last_grade else '1px solid #c8d0d4'
                 
                 # 확정
-                html_pass_table += f'<td style="background: {row_bg}; color: #0a0a0a; text-align: center; padding: 20px; font-weight: 600; border: none; border-right: 1px solid #efefef; font-size: 18px;">{confirmed}</td>'
+                html_pass_table += f'<td style="background: {row_bg}; color: #0E0E2C; text-align: center; padding: 10px; font-weight: 500; border: none; border-right: 1px solid #DAE0E3; font-size: 14px;">{confirmed}</td>'
                 
                 # 블록
-                html_pass_table += f'<td style="background: {row_bg}; color: #6b6b6b; text-align: center; padding: 20px; font-weight: 500; border: none; border-right: 1px solid #efefef; font-size: 18px;">{blocked}</td>'
+                html_pass_table += f'<td style="background: {row_bg}; color: #88949C; text-align: center; padding: 10px; font-weight: 400; border: none; border-right: 1px solid #DAE0E3; font-size: 14px;">{blocked}</td>'
                 
                 # 잔여 (노란색 배경, 0이면 빨간색)
                 if remaining == 0:
-                    remaining_style = f'background: #fff5f5; color: #c62828; text-align: center; padding: 20px; font-weight: 700; border: none; border-right: {grade_separator}; border-left: 3px solid #ef5350; font-size: 19px;'
+                    remaining_style = f'background: #FEF2F2; color: #EA3336; text-align: center; padding: 10px; font-weight: 700; border: none; border-right: {grade_separator}; border-left: 3px solid #EA3336; font-size: 14px;'
                 else:
-                    yellow_bg = '#fffef5' if row_bg == '#ffffff' else '#fffdf0'
-                    remaining_style = f'background: {yellow_bg}; color: #1565c0; text-align: center; padding: 20px; font-weight: 600; border: none; border-right: {grade_separator}; font-size: 18px;'
+                    yellow_bg = '#FFFBEB' if row_bg == '#FFFFFF' else '#FEF9E7'
+                    remaining_style = f'background: {yellow_bg}; color: #436CFC; text-align: center; padding: 10px; font-weight: 500; border: none; border-right: {grade_separator}; font-size: 14px;'
                 html_pass_table += f'<td style="{remaining_style}">{remaining}</td>'
             
             html_pass_table += '</tr>'
@@ -2081,26 +2152,26 @@ if 'query_result' in st.session_state:
         
         st.markdown(html_pass_table, unsafe_allow_html=True)
         
-        # 범례 - 승객용
+        # 범례 - 승객용 (NEOHELIOS 디자인)
         st.markdown("""
-        <div style="margin-top: 40px; padding: 36px; background: #ffffff; border-radius: 2px; border: 1px solid #e0e0e0;">
-            <div style="color: #6b6b6b; font-weight: 600; font-size: 14px; margin-bottom: 28px; text-transform: uppercase; letter-spacing: 1.5px;">범례</div>
-            <div class="legend-container" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 28px;">
+        <div style="margin-top: 24px; padding: 20px; background: #FFFFFF; border-radius: 5px; border: 1px solid #DAE0E3; font-family: 'Noto Sans KR', sans-serif;">
+            <div style="color: #232A5E; font-weight: 700; font-size: 12px; margin-bottom: 16px; letter-spacing: -0.5px;">범례</div>
+            <div class="legend-container" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">
                 <div style="display: flex; align-items: center;">
-                    <span style="display: inline-block; width: 28px; height: 28px; background: #0a0a0a; border-radius: 1px; margin-right: 14px;"></span>
-                    <span style="color: #0a0a0a; font-size: 16px; font-weight: 500;">확정 (실제 명단 입력 완료)</span>
+                    <span style="display: inline-block; width: 20px; height: 20px; background: #0E0E2C; border-radius: 3px; margin-right: 10px;"></span>
+                    <span style="color: #0E0E2C; font-size: 14px; font-weight: 500;">확정 (명단 입력 완료)</span>
                 </div>
                 <div style="display: flex; align-items: center;">
-                    <span style="display: inline-block; width: 28px; height: 28px; background: #6b6b6b; border-radius: 1px; margin-right: 14px;"></span>
-                    <span style="color: #6b6b6b; font-size: 16px; font-weight: 500;">블록 (점유만 된 상태, 정원 제한 적용)</span>
+                    <span style="display: inline-block; width: 20px; height: 20px; background: #88949C; border-radius: 3px; margin-right: 10px;"></span>
+                    <span style="color: #88949C; font-size: 14px; font-weight: 500;">블록 (점유 상태, 정원 제한 적용)</span>
                 </div>
                 <div style="display: flex; align-items: center;">
-                    <span style="display: inline-block; width: 28px; height: 28px; background: #fffef5; border: 1px solid #1565c0; border-radius: 1px; margin-right: 14px;"></span>
-                    <span style="color: #1565c0; font-size: 16px; font-weight: 500;">잔여 (예약 가능 인원)</span>
+                    <span style="display: inline-block; width: 20px; height: 20px; background: #FFFBEB; border: 1px solid #436CFC; border-radius: 3px; margin-right: 10px;"></span>
+                    <span style="color: #436CFC; font-size: 14px; font-weight: 500;">잔여 (예약 가능 인원)</span>
                 </div>
                 <div style="display: flex; align-items: center;">
-                    <span style="display: inline-block; width: 28px; height: 28px; background: #c62828; border-radius: 1px; margin-right: 14px;"></span>
-                    <span style="color: #c62828; font-size: 16px; font-weight: 600;">예약불가 (공실 0개)</span>
+                    <span style="display: inline-block; width: 20px; height: 20px; background: #EA3336; border-radius: 3px; margin-right: 10px;"></span>
+                    <span style="color: #EA3336; font-size: 14px; font-weight: 700;">예약불가 (잔여 0명)</span>
                 </div>
             </div>
         </div>
@@ -2113,6 +2184,37 @@ if 'query_result' in st.session_state:
         if df_analysis.empty:
             st.info("확정된 승객 데이터가 없습니다.")
         else:
+            # 승객 분석 탭에 진입했음을 기록 (탭 상태 유지용)
+            st.session_state.selected_tab = 2
+            
+            # 승객 분석 전용 필터
+            filter_col1, filter_col2, _ = st.columns([2, 2, 6])
+            with filter_col1:
+                issue_options = ['전체', '발권완료', '미발권']
+                selected_issue_status = st.selectbox("발권 상태", issue_options, index=0, key="issue_status_select")
+            with filter_col2:
+                origin_country_options = ['전체', '한국', '일본']
+                selected_origin_country = st.selectbox("생성처", origin_country_options, index=0, key="origin_country_select")
+            
+            # 발권 상태로 필터링
+            if selected_issue_status == '발권완료':
+                df_analysis = df_analysis[df_analysis['is_issued'] == 1].copy()
+            elif selected_issue_status == '미발권':
+                df_analysis = df_analysis[df_analysis['is_issued'] == 0].copy()
+            
+            # 생성처로 필터링 (ticket_number 첫 글자: K=한국, J=일본)
+            if 'ticket_number' in df_analysis.columns:
+                if selected_origin_country == '한국':
+                    df_analysis = df_analysis[df_analysis['ticket_number'].str.startswith('K', na=False)].copy()
+                elif selected_origin_country == '일본':
+                    df_analysis = df_analysis[df_analysis['ticket_number'].str.startswith('J', na=False)].copy()
+            elif selected_origin_country != '전체':
+                st.warning("생성처 필터를 적용하려면 다시 조회해주세요.")
+            
+            if df_analysis.empty:
+                st.info(f"선택한 조건에 해당하는 승객 데이터가 없습니다.")
+                st.stop()
+            
             # 데이터 전처리
             today = datetime.today()
             
@@ -2180,15 +2282,15 @@ if 'query_result' in st.session_state:
             # 총 승객 수
             total_passengers = len(df_analysis)
             
-            # 헤더
+            # 헤더 (NEOHELIOS 디자인)
             st.markdown(f"""
-            <div style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 30px; border-radius: 12px; margin-bottom: 30px;">
-                <h2 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 300;">
-                    📊 확정 승객 분석
+            <div style="background: #232A5E; padding: 24px; border-radius: 5px; margin-bottom: 24px; font-family: 'Noto Sans KR', sans-serif;">
+                <h2 style="color: #FAFCFE; margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.5px;">
+                    📊 승객 분석
                 </h2>
-                <p style="color: #a0a0a0; margin: 10px 0 0 0; font-size: 16px;">
+                <p style="color: #9EA8B0; margin: 8px 0 0 0; font-size: 14px; letter-spacing: -0.5px;">
                     조회 기간: {result.get('start_date', '')} ~ {result.get('end_date', '')} | 
-                    총 <span style="color: #4fc3f7; font-weight: 600;">{total_passengers:,}</span>명
+                    총 <span style="color: #436CFC; font-weight: 700;">{total_passengers:,}</span>명
                 </p>
             </div>
             """, unsafe_allow_html=True)
@@ -2200,23 +2302,26 @@ if 'query_result' in st.session_state:
             with col1:
                 sex_counts = df_analysis['sex_name'].value_counts()
                 
+                # 성별에 따라 색상 매핑 (NEOHELIOS 디자인: 남성=파란색, 여성=분홍색)
+                sex_colors = [('#F48FB1' if s == '여성' else '#436CFC' if s == '남성' else '#9EA8B0') for s in sex_counts.index]
+                
                 fig_sex = go.Figure(data=[go.Pie(
                     labels=sex_counts.index,
                     values=sex_counts.values,
                     hole=0.6,
                     marker=dict(
-                        colors=['#4fc3f7', '#f48fb1', '#b0bec5'],
-                        line=dict(color='#ffffff', width=2)
+                        colors=sex_colors,
+                        line=dict(color='#FFFFFF', width=2)
                     ),
                     textinfo='label+percent',
-                    textfont=dict(size=14),
+                    textfont=dict(size=12, family='Noto Sans KR'),
                     hovertemplate='%{label}<br>%{value}명 (%{percent})<extra></extra>'
                 )])
                 
                 fig_sex.update_layout(
                     title=dict(
                         text='👤 성별 분포',
-                        font=dict(size=20, color='#333333'),
+                        font=dict(size=16, color='#232A5E', family='Noto Sans KR'),
                         x=0.5
                     ),
                     showlegend=True,
@@ -2225,7 +2330,8 @@ if 'query_result' in st.session_state:
                         yanchor='bottom',
                         y=-0.15,
                         xanchor='center',
-                        x=0.5
+                        x=0.5,
+                        font=dict(family='Noto Sans KR', size=12, color='#0E0E2C')
                     ),
                     height=400,
                     margin=dict(t=60, b=60, l=20, r=20),
@@ -2234,7 +2340,7 @@ if 'query_result' in st.session_state:
                     annotations=[dict(
                         text=f'<b>{total_passengers:,}</b><br>명',
                         x=0.5, y=0.5,
-                        font_size=20,
+                        font=dict(size=18, color='#232A5E', family='Noto Sans KR'),
                         showarrow=False
                     )]
                 )
@@ -2245,8 +2351,9 @@ if 'query_result' in st.session_state:
             with col2:
                 nationality_counts = df_analysis['nationality_name'].value_counts().head(10)
                 
-                # 색상 그라데이션
-                colors = px.colors.sequential.Blues_r[:len(nationality_counts)]
+                # NEOHELIOS 색상 그라데이션 (Primary Blue 기반)
+                n_colors = len(nationality_counts)
+                colors = [f'rgba(67, 108, 252, {0.3 + 0.7 * (i / max(n_colors-1, 1))})' for i in range(n_colors)]
                 
                 fig_nat = go.Figure(data=[go.Bar(
                     y=nationality_counts.index[::-1],
@@ -2254,24 +2361,25 @@ if 'query_result' in st.session_state:
                     orientation='h',
                     marker=dict(
                         color=colors[::-1],
-                        line=dict(color='#ffffff', width=1)
+                        line=dict(color='#FFFFFF', width=1)
                     ),
                     text=nationality_counts.values[::-1],
                     textposition='outside',
-                    textfont=dict(size=12, color='#333333'),
+                    textfont=dict(size=12, color='#0E0E2C', family='Noto Sans KR'),
                     hovertemplate='%{y}<br>%{x}명<extra></extra>'
                 )])
                 
                 fig_nat.update_layout(
                     title=dict(
                         text='🌍 국적 분포 (Top 10)',
-                        font=dict(size=20, color='#333333'),
+                        font=dict(size=16, color='#232A5E', family='Noto Sans KR'),
                         x=0.5
                     ),
                     xaxis=dict(
                         title='승객 수',
                         showgrid=True,
-                        gridcolor='rgba(0,0,0,0.1)'
+                        gridcolor='#DAE0E3',
+                        titlefont=dict(family='Noto Sans KR', size=12, color='#88949C')
                     ),
                     yaxis=dict(
                         title='',
