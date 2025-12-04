@@ -1837,7 +1837,10 @@ if 'query_result' in st.session_state:
         ws2.row_dimensions[row_idx].height = 20
     
     # 시트 3: 생성처별 (국적 기준)
-    ws3 = wb.create_sheet(title='생성처별')
+    # 생성처 필터 값 가져오기 (탭 필터와 동일하게 적용)
+    excel_origin_filter = st.session_state.get('origin_filter_tab4', '전체')
+    sheet_title = '생성처별' if excel_origin_filter == '전체' else f'생성처별_{excel_origin_filter}'
+    ws3 = wb.create_sheet(title=sheet_title)
     df_passenger_analysis = result.get('passenger_analysis', pd.DataFrame())
     df_schedules_excel = result.get('schedules', pd.DataFrame())
     
@@ -1855,6 +1858,13 @@ if 'query_result' in st.session_state:
                 return '기타 국적'
         
         df_origin_excel = df_passenger_analysis.copy()
+        
+        # 생성처 필터 적용 (ticket_number 기반: K=한국, J=일본)
+        if 'ticket_number' in df_origin_excel.columns and excel_origin_filter != '전체':
+            if excel_origin_filter == '한국':
+                df_origin_excel = df_origin_excel[df_origin_excel['ticket_number'].str.startswith('K', na=False)].copy()
+            elif excel_origin_filter == '일본':
+                df_origin_excel = df_origin_excel[df_origin_excel['ticket_number'].str.startswith('J', na=False)].copy()
         df_origin_excel['nationality_group'] = df_origin_excel['nationality'].apply(get_nationality_group_excel)
         
         # 도착 포트 계산 - direction 기반으로 통일
