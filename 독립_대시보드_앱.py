@@ -1451,6 +1451,186 @@ if 'query_result' in st.session_state:
     is_seat_based = vessel_name in ['PSTL', 'PSGR']
     tab1_name = "좌석" if is_seat_based else "객실"
     
+    # 엑셀 다운로드 버튼용 데이터 준비 (탭 위에 배치하기 위해 미리 생성)
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    from openpyxl.utils import get_column_letter
+    
+    final_df = result['final_df']
+    passenger_final_df = result['final_df_passengers']
+    existing_grades = result['existing_grades']
+    start_date = result['start_date']
+    end_date = result['end_date']
+    
+    # 엑셀 워크북 생성
+    wb = Workbook()
+    
+    # 시트 1: 객실
+    ws = wb.active
+    ws.title = '객실'
+    current_col = 1
+    ws.cell(1, current_col, 'Date')
+    ws.merge_cells(start_row=1, start_column=current_col, end_row=2, end_column=current_col)
+    current_col += 1
+    for grade in existing_grades:
+        ws.cell(1, current_col, grade)
+        ws.merge_cells(start_row=1, start_column=current_col, end_row=1, end_column=current_col + 2)
+        current_col += 3
+    current_col = 2
+    for grade in existing_grades:
+        ws.cell(2, current_col, '확정')
+        ws.cell(2, current_col + 1, '블록')
+        ws.cell(2, current_col + 2, '공실')
+        current_col += 3
+    for row_idx, row in final_df.iterrows():
+        excel_row = row_idx + 3
+        current_col = 1
+        ws.cell(excel_row, current_col, row['날짜'])
+        current_col += 1
+        for grade in existing_grades:
+            ws.cell(excel_row, current_col, int(row.get(f'{grade}_확정', 0)))
+            ws.cell(excel_row, current_col + 1, int(row.get(f'{grade}_블록', 0)))
+            ws.cell(excel_row, current_col + 2, int(row.get(f'{grade}_공실', 0)))
+            current_col += 3
+    
+    # 시트 1 스타일링
+    header_fill = PatternFill(start_color='0a0a0a', end_color='0a0a0a', fill_type='solid')
+    header_font = Font(color='FFFFFF', size=12, bold=True)
+    subheader_fill = PatternFill(start_color='f5f5f5', end_color='f5f5f5', fill_type='solid')
+    subheader_font = Font(color='6b6b6b', size=11, bold=True)
+    yellow_fill = PatternFill(start_color='fffef5', end_color='fffef5', fill_type='solid')
+    thin_border = Border(
+        left=Side(style='thin', color='e0e0e0'),
+        right=Side(style='thin', color='e0e0e0'),
+        top=Side(style='thin', color='e0e0e0'),
+        bottom=Side(style='thin', color='e0e0e0')
+    )
+    for col in range(1, ws.max_column + 1):
+        ws.cell(1, col).fill = header_fill
+        ws.cell(1, col).font = header_font
+        ws.cell(1, col).alignment = Alignment(horizontal='center', vertical='center')
+        ws.cell(1, col).border = thin_border
+        ws.cell(2, col).fill = subheader_fill
+        ws.cell(2, col).font = subheader_font
+        ws.cell(2, col).alignment = Alignment(horizontal='center', vertical='center')
+        ws.cell(2, col).border = thin_border
+    for row_idx in range(3, ws.max_row + 1):
+        current_col = 1
+        ws.cell(row_idx, current_col).alignment = Alignment(horizontal='left', vertical='center')
+        ws.cell(row_idx, current_col).border = thin_border
+        current_col += 1
+        for grade in existing_grades:
+            ws.cell(row_idx, current_col).alignment = Alignment(horizontal='center', vertical='center')
+            ws.cell(row_idx, current_col).border = thin_border
+            ws.cell(row_idx, current_col).font = Font(size=11, bold=True)
+            ws.cell(row_idx, current_col + 1).alignment = Alignment(horizontal='center', vertical='center')
+            ws.cell(row_idx, current_col + 1).border = thin_border
+            ws.cell(row_idx, current_col + 1).font = Font(color='6b6b6b', size=11)
+            ws.cell(row_idx, current_col + 2).alignment = Alignment(horizontal='center', vertical='center')
+            ws.cell(row_idx, current_col + 2).border = thin_border
+            ws.cell(row_idx, current_col + 2).fill = yellow_fill
+            ws.cell(row_idx, current_col + 2).font = Font(color='1565c0', size=11, bold=True)
+            current_col += 3
+    ws.column_dimensions['A'].width = 18
+    for col_idx in range(2, ws.max_column + 1):
+        ws.column_dimensions[get_column_letter(col_idx)].width = 10
+    ws.row_dimensions[1].height = 25
+    ws.row_dimensions[2].height = 20
+    for row_idx in range(3, ws.max_row + 1):
+        ws.row_dimensions[row_idx].height = 20
+    
+    # 시트 2: 승객
+    ws2 = wb.create_sheet(title='승객')
+    current_col = 1
+    ws2.cell(1, current_col, 'Date')
+    ws2.merge_cells(start_row=1, start_column=current_col, end_row=2, end_column=current_col)
+    current_col += 1
+    for grade in existing_grades:
+        ws2.cell(1, current_col, grade)
+        ws2.merge_cells(start_row=1, start_column=current_col, end_row=1, end_column=current_col + 2)
+        current_col += 3
+    current_col = 2
+    for grade in existing_grades:
+        ws2.cell(2, current_col, '확정')
+        ws2.cell(2, current_col + 1, '블록')
+        ws2.cell(2, current_col + 2, '잔여')
+        current_col += 3
+    for row_idx, row in passenger_final_df.iterrows():
+        excel_row = row_idx + 3
+        current_col = 1
+        ws2.cell(excel_row, current_col, row['날짜'])
+        current_col += 1
+        for grade in existing_grades:
+            ws2.cell(excel_row, current_col, int(row.get(f'{grade}_확정', 0)))
+            ws2.cell(excel_row, current_col + 1, int(row.get(f'{grade}_블록', 0)))
+            ws2.cell(excel_row, current_col + 2, int(row.get(f'{grade}_잔여', 0)))
+            current_col += 3
+    for col in range(1, ws2.max_column + 1):
+        ws2.cell(1, col).fill = header_fill
+        ws2.cell(1, col).font = header_font
+        ws2.cell(1, col).alignment = Alignment(horizontal='center', vertical='center')
+        ws2.cell(1, col).border = thin_border
+        ws2.cell(2, col).fill = subheader_fill
+        ws2.cell(2, col).font = subheader_font
+        ws2.cell(2, col).alignment = Alignment(horizontal='center', vertical='center')
+        ws2.cell(2, col).border = thin_border
+    for row_idx in range(3, ws2.max_row + 1):
+        current_col = 1
+        ws2.cell(row_idx, current_col).alignment = Alignment(horizontal='left', vertical='center')
+        ws2.cell(row_idx, current_col).border = thin_border
+        current_col += 1
+        for grade in existing_grades:
+            ws2.cell(row_idx, current_col).alignment = Alignment(horizontal='center', vertical='center')
+            ws2.cell(row_idx, current_col).border = thin_border
+            ws2.cell(row_idx, current_col).font = Font(size=11, bold=True)
+            ws2.cell(row_idx, current_col + 1).alignment = Alignment(horizontal='center', vertical='center')
+            ws2.cell(row_idx, current_col + 1).border = thin_border
+            ws2.cell(row_idx, current_col + 1).font = Font(color='6b6b6b', size=11)
+            ws2.cell(row_idx, current_col + 2).alignment = Alignment(horizontal='center', vertical='center')
+            ws2.cell(row_idx, current_col + 2).border = thin_border
+            ws2.cell(row_idx, current_col + 2).fill = yellow_fill
+            ws2.cell(row_idx, current_col + 2).font = Font(color='1565c0', size=11, bold=True)
+            current_col += 3
+    ws2.column_dimensions['A'].width = 18
+    for col_idx in range(2, ws2.max_column + 1):
+        ws2.column_dimensions[get_column_letter(col_idx)].width = 10
+    ws2.row_dimensions[1].height = 25
+    ws2.row_dimensions[2].height = 20
+    for row_idx in range(3, ws2.max_row + 1):
+        ws2.row_dimensions[row_idx].height = 20
+    
+    output = io.BytesIO()
+    wb.save(output)
+    excel_data = output.getvalue()
+    
+    # 탭 + 다운로드 버튼을 같은 줄에 배치
+    st.markdown("""
+    <style>
+    .tab-excel-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: -40px;
+    }
+    .excel-download-btn {
+        position: relative;
+        z-index: 100;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # 탭과 다운로드 버튼 배치
+    col_tab, col_btn = st.columns([9, 1])
+    with col_btn:
+        st.download_button(
+            label="📥 Excel",
+            data=excel_data,
+            file_name=f"크루즈현황_{start_date}_{end_date}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="excel_download_top"
+        )
+    
     # 탭 생성
     tab1, tab2 = st.tabs([tab1_name, "승객"])
     
@@ -1805,221 +1985,6 @@ if 'query_result' in st.session_state:
             </div>
         </div>
         """, unsafe_allow_html=True)
-    
-    # 엑셀 다운로드 (화면과 똑같은 양식)
-    st.markdown('<hr style="border: none; height: 1px; background: #e0e0e0; margin: 30px 0;">', unsafe_allow_html=True)
-    
-    import io
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
-    
-    final_df = result['final_df']
-    passenger_final_df = result['final_df_passengers']
-    existing_grades = result['existing_grades']
-    start_date = result['start_date']
-    end_date = result['end_date']
-    
-    # 엑셀 워크북 생성
-    wb = Workbook()
-    
-    # ==================== 시트 1: 객실 ====================
-    ws = wb.active
-    ws.title = '객실'
-    
-    # 헤더 1행: Date + 등급명
-    current_col = 1
-    ws.cell(1, current_col, 'Date')
-    ws.merge_cells(start_row=1, start_column=current_col, end_row=2, end_column=current_col)
-    current_col += 1
-    
-    for grade in existing_grades:
-        ws.cell(1, current_col, grade)
-        ws.merge_cells(start_row=1, start_column=current_col, end_row=1, end_column=current_col + 2)
-        current_col += 3
-    
-    # 헤더 2행: 확정/블록/공실
-    current_col = 2
-    for grade in existing_grades:
-        ws.cell(2, current_col, '확정')
-        ws.cell(2, current_col + 1, '블록')
-        ws.cell(2, current_col + 2, '공실')
-        current_col += 3
-    
-    # 데이터 행
-    for row_idx, row in final_df.iterrows():
-        excel_row = row_idx + 3
-        current_col = 1
-        ws.cell(excel_row, current_col, row['날짜'])
-        current_col += 1
-        
-        for grade in existing_grades:
-            ws.cell(excel_row, current_col, int(row.get(f'{grade}_확정', 0)))
-            ws.cell(excel_row, current_col + 1, int(row.get(f'{grade}_블록', 0)))
-            ws.cell(excel_row, current_col + 2, int(row.get(f'{grade}_공실', 0)))
-            current_col += 3
-    
-    # 스타일링
-    header_fill = PatternFill(start_color='0a0a0a', end_color='0a0a0a', fill_type='solid')
-    header_font = Font(color='FFFFFF', size=12, bold=True)
-    subheader_fill = PatternFill(start_color='f5f5f5', end_color='f5f5f5', fill_type='solid')
-    subheader_font = Font(color='6b6b6b', size=11, bold=True)
-    yellow_fill = PatternFill(start_color='fffef5', end_color='fffef5', fill_type='solid')
-    
-    thin_border = Border(
-        left=Side(style='thin', color='e0e0e0'),
-        right=Side(style='thin', color='e0e0e0'),
-        top=Side(style='thin', color='e0e0e0'),
-        bottom=Side(style='thin', color='e0e0e0')
-    )
-    
-    # 헤더 스타일
-    for col in range(1, ws.max_column + 1):
-        ws.cell(1, col).fill = header_fill
-        ws.cell(1, col).font = header_font
-        ws.cell(1, col).alignment = Alignment(horizontal='center', vertical='center')
-        ws.cell(1, col).border = thin_border
-        
-        ws.cell(2, col).fill = subheader_fill
-        ws.cell(2, col).font = subheader_font
-        ws.cell(2, col).alignment = Alignment(horizontal='center', vertical='center')
-        ws.cell(2, col).border = thin_border
-    
-    # 데이터 행 스타일 + 공실 컬럼 노란색
-    for row_idx in range(3, ws.max_row + 1):
-        current_col = 1
-        ws.cell(row_idx, current_col).alignment = Alignment(horizontal='left', vertical='center')
-        ws.cell(row_idx, current_col).border = thin_border
-        current_col += 1
-        
-        for grade in existing_grades:
-            # 확정
-            ws.cell(row_idx, current_col).alignment = Alignment(horizontal='center', vertical='center')
-            ws.cell(row_idx, current_col).border = thin_border
-            ws.cell(row_idx, current_col).font = Font(size=11, bold=True)
-            
-            # 블록
-            ws.cell(row_idx, current_col + 1).alignment = Alignment(horizontal='center', vertical='center')
-            ws.cell(row_idx, current_col + 1).border = thin_border
-            ws.cell(row_idx, current_col + 1).font = Font(color='6b6b6b', size=11)
-            
-            # 공실 (노란색 배경)
-            ws.cell(row_idx, current_col + 2).alignment = Alignment(horizontal='center', vertical='center')
-            ws.cell(row_idx, current_col + 2).border = thin_border
-            ws.cell(row_idx, current_col + 2).fill = yellow_fill
-            ws.cell(row_idx, current_col + 2).font = Font(color='1565c0', size=11, bold=True)
-            
-            current_col += 3
-    
-    # 컬럼 너비 조정
-    from openpyxl.utils import get_column_letter
-    ws.column_dimensions['A'].width = 18
-    for col_idx in range(2, ws.max_column + 1):
-        col_letter = get_column_letter(col_idx)
-        ws.column_dimensions[col_letter].width = 10
-    
-    # 행 높이
-    ws.row_dimensions[1].height = 25
-    ws.row_dimensions[2].height = 20
-    for row_idx in range(3, ws.max_row + 1):
-        ws.row_dimensions[row_idx].height = 20
-    
-    # ==================== 시트 2: 승객 ====================
-    ws2 = wb.create_sheet(title='승객')
-    
-    # 헤더 1행: Date + 등급명
-    current_col = 1
-    ws2.cell(1, current_col, 'Date')
-    ws2.merge_cells(start_row=1, start_column=current_col, end_row=2, end_column=current_col)
-    current_col += 1
-    
-    for grade in existing_grades:
-        ws2.cell(1, current_col, grade)
-        ws2.merge_cells(start_row=1, start_column=current_col, end_row=1, end_column=current_col + 2)
-        current_col += 3
-    
-    # 헤더 2행: 확정/블록/잔여
-    current_col = 2
-    for grade in existing_grades:
-        ws2.cell(2, current_col, '확정')
-        ws2.cell(2, current_col + 1, '블록')
-        ws2.cell(2, current_col + 2, '잔여')
-        current_col += 3
-    
-    # 데이터 행
-    for row_idx, row in passenger_final_df.iterrows():
-        excel_row = row_idx + 3
-        current_col = 1
-        ws2.cell(excel_row, current_col, row['날짜'])
-        current_col += 1
-        
-        for grade in existing_grades:
-            ws2.cell(excel_row, current_col, int(row.get(f'{grade}_확정', 0)))
-            ws2.cell(excel_row, current_col + 1, int(row.get(f'{grade}_블록', 0)))
-            ws2.cell(excel_row, current_col + 2, int(row.get(f'{grade}_잔여', 0)))
-            current_col += 3
-    
-    # 스타일링 (시트 2)
-    for col in range(1, ws2.max_column + 1):
-        ws2.cell(1, col).fill = header_fill
-        ws2.cell(1, col).font = header_font
-        ws2.cell(1, col).alignment = Alignment(horizontal='center', vertical='center')
-        ws2.cell(1, col).border = thin_border
-        
-        ws2.cell(2, col).fill = subheader_fill
-        ws2.cell(2, col).font = subheader_font
-        ws2.cell(2, col).alignment = Alignment(horizontal='center', vertical='center')
-        ws2.cell(2, col).border = thin_border
-    
-    # 데이터 행 스타일
-    for row_idx in range(3, ws2.max_row + 1):
-        current_col = 1
-        ws2.cell(row_idx, current_col).alignment = Alignment(horizontal='left', vertical='center')
-        ws2.cell(row_idx, current_col).border = thin_border
-        current_col += 1
-        
-        for grade in existing_grades:
-            # 확정
-            ws2.cell(row_idx, current_col).alignment = Alignment(horizontal='center', vertical='center')
-            ws2.cell(row_idx, current_col).border = thin_border
-            ws2.cell(row_idx, current_col).font = Font(size=11, bold=True)
-            
-            # 블록
-            ws2.cell(row_idx, current_col + 1).alignment = Alignment(horizontal='center', vertical='center')
-            ws2.cell(row_idx, current_col + 1).border = thin_border
-            ws2.cell(row_idx, current_col + 1).font = Font(color='6b6b6b', size=11)
-            
-            # 잔여 (노란색 배경)
-            ws2.cell(row_idx, current_col + 2).alignment = Alignment(horizontal='center', vertical='center')
-            ws2.cell(row_idx, current_col + 2).border = thin_border
-            ws2.cell(row_idx, current_col + 2).fill = yellow_fill
-            ws2.cell(row_idx, current_col + 2).font = Font(color='1565c0', size=11, bold=True)
-            
-            current_col += 3
-    
-    # 컬럼 너비 조정 (시트 2)
-    ws2.column_dimensions['A'].width = 18
-    for col_idx in range(2, ws2.max_column + 1):
-        col_letter = get_column_letter(col_idx)
-        ws2.column_dimensions[col_letter].width = 10
-    
-    # 행 높이 (시트 2)
-    ws2.row_dimensions[1].height = 25
-    ws2.row_dimensions[2].height = 20
-    for row_idx in range(3, ws2.max_row + 1):
-        ws2.row_dimensions[row_idx].height = 20
-    
-    # 저장
-    output = io.BytesIO()
-    wb.save(output)
-    excel_data = output.getvalue()
-    
-    st.download_button(
-        label="엑셀 다운로드",
-        data=excel_data,
-        file_name=f"크루즈현황_객실_승객_{start_date}_{end_date}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        type="primary"
-    )
 
 st.markdown('<hr style="border: none; height: 1px; background: #e0e0e0; margin: 40px 0;">', unsafe_allow_html=True)
 st.markdown('<p style="text-align: center; color: #999999; font-size: 12px;">문제가 있으면 DB 접속 정보를 확인하세요</p>', unsafe_allow_html=True)
