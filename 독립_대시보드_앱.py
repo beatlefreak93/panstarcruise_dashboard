@@ -717,11 +717,11 @@ route_direction_map = {
     'ONC': {'first': 'PUS', 'second': 'PUS'},
     'KSC': {'first': 'PUS', 'second': 'PUS'},
     'TSL': {'first': 'PUS', 'second': 'IZH'},
-    'EAS': {'first': 'PUS', 'second': 'FUK'},
-    'SCC': {'first': 'PUS', 'second': 'FUK'},
-    'FWC': {'first': 'PUS', 'second': 'FUK'},
-    'SND': {'first': 'PUS', 'second': 'FUK'},
-    'NFW': {'first': 'PUS', 'second': 'FUK'},
+    'EAS': {'first': 'PUS', 'second': 'PUS'},  # 부산 출도착
+    'SCC': {'first': 'PUS', 'second': 'PUS'},  # 부산 출도착
+    'FWC': {'first': 'PUS', 'second': 'PUS'},  # 부산 출도착 (불꽃크루즈)
+    'SND': {'first': 'PUS', 'second': 'PUS'},  # 부산 출도착 (선상디너)
+    'NFW': {'first': 'PUS', 'second': 'PUS'},  # 부산 출도착 (야간불꽃)
 }
 
 # 좌석 기반 선박 (1객실 = 1승객)
@@ -2884,17 +2884,14 @@ if 'query_result' in st.session_state:
             df_origin['nationality_group'] = df_origin['nationality'].apply(get_nationality_group)
             
             # 도착 포트 계산
-            # TSL 항로: arrival_schedule_id의 port_id로 도착지 결정
-            # 기타 항로: direction 기반으로 결정
+            # arrival_schedule_id가 있으면 해당 스케줄의 port로 도착지 결정 (TSL, PSGR 등 모든 항로)
+            # 없으면 direction 기반으로 결정
             route_ports_info = route_direction_map.get(selected_route, {'first': '-', 'second': '-'})
             first_port = route_ports_info.get('first', '-')
             second_port = route_ports_info.get('second', '-')
             
-            is_tsl_route = selected_route == 'TSL'
-            
-            if is_tsl_route and not df_schedules.empty and 'arrival_schedule_id' in df_origin.columns:
-                # TSL: arrival_schedule_id로 도착 포트 매핑
-                # df_schedules에서 schedule_id → departure_port 매핑 (schedule의 port가 해당 스케줄의 출발/도착지)
+            if not df_schedules.empty and 'arrival_schedule_id' in df_origin.columns:
+                # arrival_schedule_id로 도착 포트 매핑
                 schedule_port_map = df_schedules.set_index('schedule_id')['departure_port'].to_dict()
                 
                 # arrival_schedule_id를 int로 변환 (NaN은 -1로)
@@ -2902,9 +2899,21 @@ if 'query_result' in st.session_state:
                 
                 # arrival_schedule_id의 departure_port가 곧 도착지
                 df_origin['arrival_port'] = df_origin['arrival_schedule_id_int'].map(schedule_port_map)
+                
+                # 매핑 안 된 경우 direction 기반으로 fallback
+                if df_origin['arrival_port'].isna().any() and 'direction' in df_schedules.columns:
+                    schedule_direction_map = df_schedules.set_index('schedule_id')['direction'].to_dict()
+                    df_origin['direction'] = df_origin['schedule_id'].map(schedule_direction_map)
+                    
+                    # arrival_port가 NaN인 행만 direction으로 채우기
+                    mask = df_origin['arrival_port'].isna()
+                    df_origin.loc[mask, 'arrival_port'] = df_origin.loc[mask, 'direction'].apply(
+                        lambda d: second_port if d == 'E' else (first_port if d == 'W' else '-')
+                    )
+                
                 df_origin['arrival_port'] = df_origin['arrival_port'].fillna('-')
             elif not df_schedules.empty and 'direction' in df_schedules.columns:
-                # 기타 항로: direction 기반
+                # direction 기반 (fallback)
                 schedule_direction_map = df_schedules.set_index('schedule_id')['direction'].to_dict()
                 df_origin['direction'] = df_origin['schedule_id'].map(schedule_direction_map)
                 
