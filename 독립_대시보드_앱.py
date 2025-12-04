@@ -927,199 +927,279 @@ if query_button:
                 """
                 df_total_rooms = pd.read_sql(total_rooms_query, conn_cruise)
                 
-                # 3. 예약 현황 조회 (확정, 블록 객실 수만)
-                # 확정: 실제 명단(is_temporary=0, status NOT LIKE 'REFUND%')이 1개 이상 (블록 섞여도 확정!)
-                # 블록: 블록만 있고 실제 명단 0개
-                # 공실: 전체 객실 - 확정 - 블록
+                # 3. 예약 현황 조회 (확정, 블록 객실/좌석 수)
+                # PSMC (객실 기반): on_boarding_room_id로 객실 연결
+                # PSTL/PSGR (좌석 기반): grade_price_detail_by_age_group_id로 등급 연결
+                # 확정: is_temporary=0, 블록: is_temporary=1
                 # REFUND 상태는 취소 티켓이므로 제외!
-                booking_query = f"""
-                    WITH room_status AS (
+                
+                is_seat_based = selected_vessel in seat_based_vessels
+                
+                if is_seat_based:
+                    # PSTL/PSGR: 좌석 기반 - grade_price_detail_by_age_group_id 경로로 등급 조회
+                    # 블록 티켓은 on_boarding_room_id가 NULL이므로 이 경로 사용
+                    booking_query = f"""
                         SELECT 
-                            t.departure_schedule_id,
-                            t.on_boarding_room_id,
+                            t.departure_schedule_id AS schedule_id,
                             g.code AS grade,
-                            MAX(CASE 
-                                WHEN t.is_temporary = 0 
-                                     AND t.status NOT LIKE 'REFUND%'
-                                THEN 1 
-                                ELSE 0 
-                            END) AS has_confirmed,
-                            MAX(CASE 
-                                WHEN t.is_temporary = 1 
-                                     AND t.status NOT LIKE 'REFUND%'
-                                THEN 1 
-                                ELSE 0 
-                            END) AS has_blocked
+                            COUNT(CASE WHEN t.is_temporary = 0 AND t.status NOT LIKE 'REFUND%' THEN 1 END) AS confirmed_rooms,
+                            COUNT(CASE WHEN t.is_temporary = 1 AND t.status NOT LIKE 'REFUND%' THEN 1 END) AS blocked_rooms
                         FROM tickets t
-                        INNER JOIN rooms r ON t.on_boarding_room_id = r.id
-                        INNER JOIN grades g ON r.grade_id = g.id
-                        {tsl_arrival_join}
+                        LEFT JOIN grade_price_detail_by_age_groups gpdag ON t.grade_price_detail_by_age_group_id = gpdag.id
+                        LEFT JOIN grade_price_details gpd ON gpdag.grade_price_detail_id = gpd.id
+                        LEFT JOIN grade_prices gp ON gpd.grade_price_id = gp.id
+                        LEFT JOIN grades g ON gp.grade_id = g.id
                         WHERE t.departure_schedule_id IN ({schedule_ids})
                           AND t.deleted_at IS NULL
-                          AND r.deleted_at IS NULL
-                          AND g.deleted_at IS NULL
-                          AND t.on_boarding_room_id IS NOT NULL
                           AND t.status NOT LIKE 'REFUND%'
+                          AND g.code IS NOT NULL
                           {tsl_arrival_filter}
-                        GROUP BY t.departure_schedule_id, t.on_boarding_room_id, g.code
-                    )
-                    SELECT 
-                        departure_schedule_id AS schedule_id,
-                        grade,
-                        COUNT(CASE WHEN has_confirmed = 1 THEN 1 END) AS confirmed_rooms,
-                        COUNT(CASE WHEN has_confirmed = 0 AND has_blocked = 1 THEN 1 END) AS blocked_rooms
-                    FROM room_status
-                    WHERE grade IS NOT NULL
-                    GROUP BY departure_schedule_id, grade
-                """
+                        GROUP BY t.departure_schedule_id, g.code
+                    """
+                else:
+                    # PSMC: 객실 기반 - on_boarding_room_id로 객실 연결
+                    booking_query = f"""
+                        WITH room_status AS (
+                            SELECT 
+                                t.departure_schedule_id,
+                                t.on_boarding_room_id,
+                                g.code AS grade,
+                                MAX(CASE 
+                                    WHEN t.is_temporary = 0 
+                                         AND t.status NOT LIKE 'REFUND%'
+                                    THEN 1 
+                                    ELSE 0 
+                                END) AS has_confirmed,
+                                MAX(CASE 
+                                    WHEN t.is_temporary = 1 
+                                         AND t.status NOT LIKE 'REFUND%'
+                                    THEN 1 
+                                    ELSE 0 
+                                END) AS has_blocked
+                            FROM tickets t
+                            INNER JOIN rooms r ON t.on_boarding_room_id = r.id
+                            INNER JOIN grades g ON r.grade_id = g.id
+                            {tsl_arrival_join}
+                            WHERE t.departure_schedule_id IN ({schedule_ids})
+                              AND t.deleted_at IS NULL
+                              AND r.deleted_at IS NULL
+                              AND g.deleted_at IS NULL
+                              AND t.on_boarding_room_id IS NOT NULL
+                              AND t.status NOT LIKE 'REFUND%'
+                              {tsl_arrival_filter}
+                            GROUP BY t.departure_schedule_id, t.on_boarding_room_id, g.code
+                        )
+                        SELECT 
+                            departure_schedule_id AS schedule_id,
+                            grade,
+                            COUNT(CASE WHEN has_confirmed = 1 THEN 1 END) AS confirmed_rooms,
+                            COUNT(CASE WHEN has_confirmed = 0 AND has_blocked = 1 THEN 1 END) AS blocked_rooms
+                        FROM room_status
+                        WHERE grade IS NOT NULL
+                        GROUP BY departure_schedule_id, grade
+                    """
                 df_bookings = pd.read_sql(booking_query, conn_cruise)
                 
                 # 3-1. 승객 수 조회 (티켓 수 기반)
-                # 확정: 실제 티켓 수
-                # 블록: 각 객실별로 MIN(블록 티켓 수, 정원)을 적용하여 합산
-                # 정원: OR,BS,PR,RS=2명, IC,OC,DA=4명, GR=16명
-                passenger_query = f"""
-                    WITH confirmed_count AS (
+                # PSMC: 확정=티켓수, 블록=MIN(블록티켓수, 정원)
+                # PSTL/PSGR: 1좌석=1승객이므로 좌석 수와 동일
+                
+                if is_seat_based:
+                    # PSTL/PSGR: 좌석 기반 - 좌석 수 = 승객 수
+                    passenger_query = f"""
                         SELECT 
-                            t.departure_schedule_id,
+                            t.departure_schedule_id AS schedule_id,
                             g.code AS grade,
-                            COUNT(*) AS confirmed_passengers
+                            COUNT(CASE WHEN t.is_temporary = 0 AND t.status NOT LIKE 'REFUND%' THEN 1 END) AS confirmed_passengers,
+                            COUNT(CASE WHEN t.is_temporary = 1 AND t.status NOT LIKE 'REFUND%' THEN 1 END) AS blocked_passengers
                         FROM tickets t
-                        INNER JOIN rooms r ON t.on_boarding_room_id = r.id
-                        INNER JOIN grades g ON r.grade_id = g.id
-                        {tsl_arrival_join}
+                        LEFT JOIN grade_price_detail_by_age_groups gpdag ON t.grade_price_detail_by_age_group_id = gpdag.id
+                        LEFT JOIN grade_price_details gpd ON gpdag.grade_price_detail_id = gpd.id
+                        LEFT JOIN grade_prices gp ON gpd.grade_price_id = gp.id
+                        LEFT JOIN grades g ON gp.grade_id = g.id
                         WHERE t.departure_schedule_id IN ({schedule_ids})
                           AND t.deleted_at IS NULL
-                          AND r.deleted_at IS NULL
-                          AND g.deleted_at IS NULL
-                          AND t.on_boarding_room_id IS NOT NULL
-                          AND t.is_temporary = 0
                           AND t.status NOT LIKE 'REFUND%'
+                          AND g.code IS NOT NULL
                           {tsl_arrival_filter}
                         GROUP BY t.departure_schedule_id, g.code
-                    ),
-                    room_blocked AS (
+                    """
+                else:
+                    # PSMC: 객실 기반 - 정원 제한 적용
+                    passenger_query = f"""
+                        WITH confirmed_count AS (
+                            SELECT 
+                                t.departure_schedule_id,
+                                g.code AS grade,
+                                COUNT(*) AS confirmed_passengers
+                            FROM tickets t
+                            INNER JOIN rooms r ON t.on_boarding_room_id = r.id
+                            INNER JOIN grades g ON r.grade_id = g.id
+                            {tsl_arrival_join}
+                            WHERE t.departure_schedule_id IN ({schedule_ids})
+                              AND t.deleted_at IS NULL
+                              AND r.deleted_at IS NULL
+                              AND g.deleted_at IS NULL
+                              AND t.on_boarding_room_id IS NOT NULL
+                              AND t.is_temporary = 0
+                              AND t.status NOT LIKE 'REFUND%'
+                              {tsl_arrival_filter}
+                            GROUP BY t.departure_schedule_id, g.code
+                        ),
+                        room_blocked AS (
+                            SELECT 
+                                t.departure_schedule_id,
+                                t.on_boarding_room_id,
+                                g.code AS grade,
+                                COUNT(*) AS blocked_tickets,
+                                CASE 
+                                    WHEN g.code IN ('OR', 'BS', 'PR') THEN 2
+                                    WHEN g.code = 'RS' THEN 3
+                                    WHEN g.code IN ('IC', 'OC', 'DA') THEN 4
+                                    WHEN g.code = 'GR' THEN 8
+                                    ELSE 2
+                                END AS capacity
+                            FROM tickets t
+                            INNER JOIN rooms r ON t.on_boarding_room_id = r.id
+                            INNER JOIN grades g ON r.grade_id = g.id
+                            {tsl_arrival_join}
+                            WHERE t.departure_schedule_id IN ({schedule_ids})
+                              AND t.deleted_at IS NULL
+                              AND r.deleted_at IS NULL
+                              AND g.deleted_at IS NULL
+                              AND t.on_boarding_room_id IS NOT NULL
+                              AND t.is_temporary = 1
+                              AND t.status NOT LIKE 'REFUND%'
+                              {tsl_arrival_filter}
+                            GROUP BY t.departure_schedule_id, t.on_boarding_room_id, g.code
+                        ),
+                        blocked_count AS (
+                            SELECT 
+                                departure_schedule_id,
+                                grade,
+                                SUM(CASE WHEN blocked_tickets <= capacity THEN blocked_tickets ELSE capacity END) AS blocked_passengers
+                            FROM room_blocked
+                            GROUP BY departure_schedule_id, grade
+                        )
                         SELECT 
-                            t.departure_schedule_id,
-                            t.on_boarding_room_id,
-                            g.code AS grade,
-                            COUNT(*) AS blocked_tickets,
-                            CASE 
-                                WHEN g.code IN ('OR', 'BS', 'PR') THEN 2
-                                WHEN g.code = 'RS' THEN 3
-                                WHEN g.code IN ('IC', 'OC', 'DA') THEN 4
-                                WHEN g.code = 'GR' THEN 8
-                                ELSE 2
-                            END AS capacity
-                        FROM tickets t
-                        INNER JOIN rooms r ON t.on_boarding_room_id = r.id
-                        INNER JOIN grades g ON r.grade_id = g.id
-                        {tsl_arrival_join}
-                        WHERE t.departure_schedule_id IN ({schedule_ids})
-                          AND t.deleted_at IS NULL
-                          AND r.deleted_at IS NULL
-                          AND g.deleted_at IS NULL
-                          AND t.on_boarding_room_id IS NOT NULL
-                          AND t.is_temporary = 1
-                          AND t.status NOT LIKE 'REFUND%'
-                          {tsl_arrival_filter}
-                        GROUP BY t.departure_schedule_id, t.on_boarding_room_id, g.code
-                    ),
-                    blocked_count AS (
-                        SELECT 
-                            departure_schedule_id,
-                            grade,
-                            SUM(CASE WHEN blocked_tickets <= capacity THEN blocked_tickets ELSE capacity END) AS blocked_passengers
-                        FROM room_blocked
-                        GROUP BY departure_schedule_id, grade
-                    )
-                    SELECT 
-                        COALESCE(c.departure_schedule_id, b.departure_schedule_id) AS schedule_id,
-                        COALESCE(c.grade, b.grade) AS grade,
-                        COALESCE(c.confirmed_passengers, 0) AS confirmed_passengers,
-                        COALESCE(b.blocked_passengers, 0) AS blocked_passengers
-                    FROM confirmed_count c
-                    FULL OUTER JOIN blocked_count b 
-                        ON c.departure_schedule_id = b.departure_schedule_id 
-                        AND c.grade = b.grade
-                """
+                            COALESCE(c.departure_schedule_id, b.departure_schedule_id) AS schedule_id,
+                            COALESCE(c.grade, b.grade) AS grade,
+                            COALESCE(c.confirmed_passengers, 0) AS confirmed_passengers,
+                            COALESCE(b.blocked_passengers, 0) AS blocked_passengers
+                        FROM confirmed_count c
+                        FULL OUTER JOIN blocked_count b 
+                            ON c.departure_schedule_id = b.departure_schedule_id 
+                            AND c.grade = b.grade
+                    """
                 df_passengers = pd.read_sql(passenger_query, conn_cruise)
                 
-                # 3-2. 객실별 상세 정보 조회 (모달용)
-                room_details_query = f"""
-                    WITH room_status AS (
+                # 3-2. 객실/좌석별 상세 정보 조회 (모달용)
+                if is_seat_based:
+                    # PSTL/PSGR: 좌석 기반 - 티켓별로 조회
+                    # 확정 좌석은 room_number, 블록 좌석은 티켓ID 일부 사용
+                    room_details_query = f"""
                         SELECT 
-                            t.departure_schedule_id,
-                            t.on_boarding_room_id,
-                            r.room_number,
+                            t.departure_schedule_id AS schedule_id,
                             g.code AS grade,
-                            MAX(CASE 
-                                WHEN t.is_temporary = 0 
-                                     AND t.status NOT LIKE 'REFUND%'
-                                THEN 1 
-                                ELSE 0 
-                            END) AS has_confirmed,
-                            MAX(CASE 
-                                WHEN t.is_temporary = 1 
-                                     AND t.status NOT LIKE 'REFUND%'
-                                THEN 1 
-                                ELSE 0 
-                            END) AS has_blocked
+                            COALESCE(r.room_number, CAST(t.id AS VARCHAR(20))) AS room_no,
+                            CASE 
+                                WHEN t.is_temporary = 0 THEN 'confirmed'
+                                WHEN t.is_temporary = 1 THEN 'blocked'
+                            END AS status
                         FROM tickets t
-                        INNER JOIN rooms r ON t.on_boarding_room_id = r.id
-                        INNER JOIN grades g ON r.grade_id = g.id
-                        {tsl_arrival_join}
+                        LEFT JOIN rooms r ON t.on_boarding_room_id = r.id
+                        LEFT JOIN grade_price_detail_by_age_groups gpdag ON t.grade_price_detail_by_age_group_id = gpdag.id
+                        LEFT JOIN grade_price_details gpd ON gpdag.grade_price_detail_id = gpd.id
+                        LEFT JOIN grade_prices gp ON gpd.grade_price_id = gp.id
+                        LEFT JOIN grades g ON gp.grade_id = g.id
                         WHERE t.departure_schedule_id IN ({schedule_ids})
                           AND t.deleted_at IS NULL
-                          AND r.deleted_at IS NULL
-                          AND g.deleted_at IS NULL
-                          AND t.on_boarding_room_id IS NOT NULL
                           AND t.status NOT LIKE 'REFUND%'
+                          AND g.code IS NOT NULL
                           {tsl_arrival_filter}
-                        GROUP BY t.departure_schedule_id, t.on_boarding_room_id, r.room_number, g.code
-                    )
-                    SELECT 
-                        departure_schedule_id AS schedule_id,
-                        grade,
-                        room_number AS room_no,
-                        CASE 
-                            WHEN has_confirmed = 1 THEN 'confirmed'
-                            WHEN has_blocked = 1 THEN 'blocked'
-                        END AS status
-                    FROM room_status
-                    WHERE grade IS NOT NULL
-                    ORDER BY schedule_id, grade, room_number
-                """
+                        ORDER BY schedule_id, grade, room_no
+                    """
+                else:
+                    # PSMC: 객실 기반
+                    room_details_query = f"""
+                        WITH room_status AS (
+                            SELECT 
+                                t.departure_schedule_id,
+                                t.on_boarding_room_id,
+                                r.room_number,
+                                g.code AS grade,
+                                MAX(CASE 
+                                    WHEN t.is_temporary = 0 
+                                         AND t.status NOT LIKE 'REFUND%'
+                                    THEN 1 
+                                    ELSE 0 
+                                END) AS has_confirmed,
+                                MAX(CASE 
+                                    WHEN t.is_temporary = 1 
+                                         AND t.status NOT LIKE 'REFUND%'
+                                    THEN 1 
+                                    ELSE 0 
+                                END) AS has_blocked
+                            FROM tickets t
+                            INNER JOIN rooms r ON t.on_boarding_room_id = r.id
+                            INNER JOIN grades g ON r.grade_id = g.id
+                            {tsl_arrival_join}
+                            WHERE t.departure_schedule_id IN ({schedule_ids})
+                              AND t.deleted_at IS NULL
+                              AND r.deleted_at IS NULL
+                              AND g.deleted_at IS NULL
+                              AND t.on_boarding_room_id IS NOT NULL
+                              AND t.status NOT LIKE 'REFUND%'
+                              {tsl_arrival_filter}
+                            GROUP BY t.departure_schedule_id, t.on_boarding_room_id, r.room_number, g.code
+                        )
+                        SELECT 
+                            departure_schedule_id AS schedule_id,
+                            grade,
+                            room_number AS room_no,
+                            CASE 
+                                WHEN has_confirmed = 1 THEN 'confirmed'
+                                WHEN has_blocked = 1 THEN 'blocked'
+                            END AS status
+                        FROM room_status
+                        WHERE grade IS NOT NULL
+                        ORDER BY schedule_id, grade, room_number
+                    """
                 df_room_details = pd.read_sql(room_details_query, conn_cruise)
                 
                 # 공실 목록도 추가 (전체 객실에서 예약된 객실 제외)
-                # schedule_ids를 VALUES로 직접 생성
-                schedule_values = ','.join([f"({sid})" for sid in df_schedules['schedule_id'].tolist()])
-                
-                vacant_rooms_query = f"""
-                    SELECT 
-                        cs.schedule_id,
-                        g.code AS grade,
-                        r.room_number AS room_no
-                    FROM rooms r
-                    INNER JOIN grades g ON r.grade_id = g.id
-                    CROSS JOIN (
-                        SELECT * FROM (VALUES {schedule_values}) AS t(schedule_id)
-                    ) cs
-                    WHERE g.route_id IN ({route_ids_str})
-                      AND r.deleted_at IS NULL
-                      AND g.deleted_at IS NULL
-                      AND NOT EXISTS (
-                          SELECT 1 FROM tickets t
-                          WHERE t.on_boarding_room_id = r.id
-                            AND t.departure_schedule_id = cs.schedule_id
-                            AND t.deleted_at IS NULL
-                            AND t.status NOT LIKE 'REFUND%'
-                      )
-                    ORDER BY schedule_id, grade, room_number
-                """
-                df_vacant_rooms = pd.read_sql(vacant_rooms_query, conn_cruise)
-                df_vacant_rooms['status'] = 'vacant'
+                # PSTL/PSGR은 좌석이 수백 개라 공실 목록 표시 안함
+                if is_seat_based:
+                    # 빈 DataFrame 생성
+                    df_vacant_rooms = pd.DataFrame(columns=['schedule_id', 'grade', 'room_no', 'status'])
+                else:
+                    # PSMC: 객실 기반 - 공실 목록 조회
+                    schedule_values = ','.join([f"({sid})" for sid in df_schedules['schedule_id'].tolist()])
+                    
+                    vacant_rooms_query = f"""
+                        SELECT 
+                            cs.schedule_id,
+                            g.code AS grade,
+                            r.room_number AS room_no
+                        FROM rooms r
+                        INNER JOIN grades g ON r.grade_id = g.id
+                        CROSS JOIN (
+                            SELECT * FROM (VALUES {schedule_values}) AS t(schedule_id)
+                        ) cs
+                        WHERE g.route_id IN ({route_ids_str})
+                          AND r.deleted_at IS NULL
+                          AND g.deleted_at IS NULL
+                          AND NOT EXISTS (
+                              SELECT 1 FROM tickets t
+                              WHERE t.on_boarding_room_id = r.id
+                                AND t.departure_schedule_id = cs.schedule_id
+                                AND t.deleted_at IS NULL
+                                AND t.status NOT LIKE 'REFUND%'
+                          )
+                        ORDER BY schedule_id, grade, room_number
+                    """
+                    df_vacant_rooms = pd.read_sql(vacant_rooms_query, conn_cruise)
+                    df_vacant_rooms['status'] = 'vacant'
                 
                 conn_cruise.close()
                 
