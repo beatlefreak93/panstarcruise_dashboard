@@ -12,14 +12,11 @@ import pandas as pd
 import json
 from datetime import datetime, timedelta
 
-# ⚠️ set_page_config()는 반드시 첫 번째 Streamlit 명령이어야 함!
+# set_page_config는 반드시 첫 번째 Streamlit 명령이어야 함
 st.set_page_config(page_title="객실 현황 대시보드", layout="wide", initial_sidebar_state="collapsed")
 
-# ============================================================
-# 📝 DB 설정 - Streamlit Secrets 사용
-# ============================================================
+# DB 설정
 try:
-    # Streamlit Cloud 또는 로컬 secrets.toml 사용
     DB_CONFIG = {
         'server': st.secrets["database"]["server"],
         'base_database': st.secrets["database"]["base_database"],
@@ -28,8 +25,7 @@ try:
         'password': st.secrets["database"]["password"],
     }
 except Exception as e:
-    # Secrets 없을 때 기본값 (개발용)
-    st.error("⚠️ DB 설정을 찾을 수 없습니다. .streamlit/secrets.toml 파일을 확인하세요.")
+    st.error("DB 설정을 찾을 수 없습니다. .streamlit/secrets.toml 파일을 확인하세요.")
     DB_CONFIG = {
         'server': '',
         'base_database': '',
@@ -37,7 +33,6 @@ except Exception as e:
         'username': '',
         'password': '',
     }
-# ============================================================
 
 # ============================================================
 # JavaScript 기반 모달 (페이지 새로고침 없음)
@@ -642,35 +637,48 @@ except Exception as e:
 st.markdown('<h3 style="color: #2d2d2d; font-weight: 600; font-size: 16px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 20px;">검색 조건</h3>', unsafe_allow_html=True)
 col1, col2, col3, col4 = st.columns(4)
 
-# 항로별 포트 매핑
-route_ports = {
-    'BOC': ['전체', 'PUS', 'OSA'],  # 부산-오사카
-    'ONC': ['전체', 'PUS', 'OSA'],  # 부산 주말 크루즈
-    'KSC': ['전체', 'PUS', 'ICN'],  # 한국해협 크루즈
-    'TSL': ['전체', 'PUS', 'TSM']   # 대마도
+# 선박별 항로 매핑
+vessel_routes = {
+    'PSMC': ['BOC', 'ONC', 'KSC'],           # 크루즈선
+    'PSTL': ['TSL'],                          # 고속선 (대마도)
+    'PSGR': ['EAS', 'SCC', 'FWC', 'SND', 'NFW']  # 여객선
 }
 
+# 항로별 포트 매핑
+route_ports = {
+    # PSMC 항로
+    'BOC': ['전체', 'PUS', 'OSA'],           # 부산-오사카
+    'ONC': ['전체', 'PUS'],                   # 부산 주말 크루즈 (왕복)
+    'KSC': ['전체', 'PUS'],                   # 한국해협 크루즈 (왕복)
+    # PSTL 항로
+    'TSL': ['전체', 'PUS', 'IZH', 'HTK'],    # 대마도 (부산-이즈하라-히타카츠)
+    # PSGR 항로 (모두 부산 출도착)
+    'EAS': ['전체', 'PUS'],                   # 동해
+    'SCC': ['전체', 'PUS'],                   # 속초
+    'FWC': ['전체', 'PUS'],                   # 불꽃크루즈
+    'SND': ['전체', 'PUS'],                   # 선상디너
+    'NFW': ['전체', 'PUS']                    # 야간불꽃
+}
+
+# TSL port_id 매핑 (proforma_schedules.port_id)
+TSL_PORT_IDS = {
+    'PUS': 1777,   # KRPUS - Busan
+    'IZH': 1633,   # JPIZH - Izuhara
+    'HTK': 3271    # JPHTK - Hitakatsu
+}
+
+# 좌석 기반 선박 (1객실 = 1승객)
+seat_based_vessels = ['PSTL', 'PSGR']
+
 with col1:
-    # 항로: BOC, ONC, KSC, TSL 등
-    route_options = {
-        'BOC': 'BOC',
-        'ONC': 'ONC', 
-        'KSC': 'KSC',
-        'TSL': 'TSL'
-    }
-    selected_route_display = st.selectbox("항로", list(route_options.keys()), index=0, key="route_select")
-    selected_route = route_options[selected_route_display]
+    # 선박 선택 (첫 번째!)
+    vessel_options = list(vessel_routes.keys())
+    selected_vessel = st.selectbox("선박", vessel_options, index=0, key="vessel_select")
 
 with col2:
-    # 선박: 항로에 따라 자동 결정 (읽기 전용)
-    vessel_map = {
-        'BOC': 'PSMC',
-        'ONC': 'PSMC',
-        'KSC': 'PSMC',
-        'TSL': 'PSTL'
-    }
-    selected_vessel = vessel_map.get(selected_route, 'PSMC')
-    st.text_input("선박", value=selected_vessel, disabled=True, key="vessel_input")
+    # 항로: 선박에 따라 동적 변경
+    route_options = vessel_routes.get(selected_vessel, ['BOC'])
+    selected_route = st.selectbox("항로", route_options, index=0, key="route_select")
 
 with col3:
     # 출발지: 항로에 따라 동적 변경
@@ -743,79 +751,99 @@ if query_button:
             
             # 항로 코드를 route_id로 변환
             route_map = {
-                'BOC': 1, 'ONC': 2, 'KSC': 3, 'TSL': 5
+                'BOC': 1, 'ONC': 2, 'KSC': 3, 'TSL': 5,
+                'EAS': 7, 'SCC': 8, 'FWC': 9, 'SND': 10, 'NFW': 11
             }
             selected_route_id = route_map.get(selected_route, 1)
             
-            # 출발지/도착지에 따른 direction 결정
-            # 각 항로별 Outbound/Inbound 정의
-            # BOC: PUS(E) ↔ OSA(W)
-            # ONC: PUS 기반
-            # KSC: PUS(E) ↔ ICN(W)
-            # TSL: PUS(E) ↔ TSM(W)
+            # TSL은 특별 처리 (arrival_schedule_id의 port로 필터링)
+            is_tsl = (selected_route == 'TSL')
             
+            # 출발지/도착지에 따른 direction 결정 (TSL 제외)
             route_direction_map = {
                 'BOC': {'first': 'PUS', 'second': 'OSA'},
-                'ONC': {'first': 'PUS', 'second': 'OSA'},
-                'KSC': {'first': 'PUS', 'second': 'ICN'},
-                'TSL': {'first': 'PUS', 'second': 'TSM'}
+                'ONC': {'first': 'PUS', 'second': 'PUS'},
+                'KSC': {'first': 'PUS', 'second': 'PUS'},
             }
             
             directions = []
-            route_ports_info = route_direction_map.get(selected_route, {'first': 'PUS', 'second': 'OSA'})
-            first_port = route_ports_info['first']
-            second_port = route_ports_info['second']
+            if not is_tsl:
+                route_ports_info = route_direction_map.get(selected_route, {'first': 'PUS', 'second': 'OSA'})
+                first_port = route_ports_info['first']
+                second_port = route_ports_info['second']
+                
+                if selected_origin == '전체' and selected_destination == '전체':
+                    directions = ['E', 'W']
+                elif selected_origin == first_port and selected_destination == '전체':
+                    directions = ['E']
+                elif selected_origin == second_port and selected_destination == '전체':
+                    directions = ['W']
+                elif selected_origin == '전체' and selected_destination == second_port:
+                    directions = ['E']
+                elif selected_origin == '전체' and selected_destination == first_port:
+                    directions = ['W']
+                elif selected_origin == first_port and selected_destination == second_port:
+                    directions = ['E']
+                elif selected_origin == second_port and selected_destination == first_port:
+                    directions = ['W']
+                else:
+                    directions = ['E', 'W']
             
-            if selected_origin == '전체' and selected_destination == '전체':
-                directions = ['E', 'W']  # 양방향
-            elif selected_origin == first_port and selected_destination == '전체':
-                directions = ['E']  # 첫 번째 포트 출발 = Outbound
-            elif selected_origin == second_port and selected_destination == '전체':
-                directions = ['W']  # 두 번째 포트 출발 = Inbound
-            elif selected_origin == '전체' and selected_destination == second_port:
-                directions = ['E']  # 두 번째 포트 도착 = Outbound
-            elif selected_origin == '전체' and selected_destination == first_port:
-                directions = ['W']  # 첫 번째 포트 도착 = Inbound
-            elif selected_origin == first_port and selected_destination == second_port:
-                directions = ['E']  # 첫 → 두 = Outbound
-            elif selected_origin == second_port and selected_destination == first_port:
-                directions = ['W']  # 두 → 첫 = Inbound
-            else:
-                # 기타 조합
-                directions = ['E', 'W']
-            
-            # 여러 direction에 대해 쿼리 실행
+            # 스케줄 조회
             all_schedules = []
-            for direction in directions:
+            
+            if is_tsl:
+                # TSL: 모든 스케줄 가져오기 (port 정보 포함)
                 schedule_query = f"""
                     SELECT 
                         cs.id AS schedule_id,
                         CONVERT(VARCHAR, cs.etd, 23) AS etd_date,
-                            voy.route_id,
-                            voy.direction
+                        CONVERT(VARCHAR, cs.etd, 108) AS etd_time,
+                        voy.route_id,
+                        voy.direction,
+                        ps.port_id AS departure_port_id
                     FROM coastal_schedules cs
                     LEFT JOIN proforma_schedules ps ON cs.proforma_schedule_id = ps.id
                     LEFT JOIN voyages voy ON ps.voyage_id = voy.id
                     WHERE voy.route_id = {selected_route_id}
-                          AND voy.direction = '{direction}'
                       AND CAST(cs.etd AS DATE) BETWEEN '{start_date}' AND '{end_date}'
                       AND cs.deleted_at IS NULL
                       AND cs.is_cruise_available = 1
                     ORDER BY cs.etd
                 """
-                df_temp = pd.read_sql(schedule_query, conn_base)
-                if not df_temp.empty:
-                    all_schedules.append(df_temp)
+                df_schedules = pd.read_sql(schedule_query, conn_base)
+            else:
+                # 기타 항로: direction으로 필터링
+                for direction in directions:
+                    schedule_query = f"""
+                        SELECT 
+                            cs.id AS schedule_id,
+                            CONVERT(VARCHAR, cs.etd, 23) AS etd_date,
+                            CONVERT(VARCHAR, cs.etd, 108) AS etd_time,
+                            voy.route_id,
+                            voy.direction
+                        FROM coastal_schedules cs
+                        LEFT JOIN proforma_schedules ps ON cs.proforma_schedule_id = ps.id
+                        LEFT JOIN voyages voy ON ps.voyage_id = voy.id
+                        WHERE voy.route_id = {selected_route_id}
+                          AND voy.direction = '{direction}'
+                          AND CAST(cs.etd AS DATE) BETWEEN '{start_date}' AND '{end_date}'
+                          AND cs.deleted_at IS NULL
+                          AND cs.is_cruise_available = 1
+                        ORDER BY cs.etd
+                    """
+                    df_temp = pd.read_sql(schedule_query, conn_base)
+                    if not df_temp.empty:
+                        all_schedules.append(df_temp)
+                
+                if all_schedules:
+                    df_schedules = pd.concat(all_schedules, ignore_index=True)
+                else:
+                    df_schedules = pd.DataFrame()
             
             conn_base.close()
             
-            # 모든 스케줄 통합
-            if all_schedules:
-                df_schedules = pd.concat(all_schedules, ignore_index=True)
-            else:
-                df_schedules = pd.DataFrame()
-            
-            # 날짜 포맷팅 (pandas에서 처리)
+            # 날짜/시간 포맷팅 (pandas에서 처리)
             df_schedules['date'] = pd.to_datetime(df_schedules['etd_date'])
             df_schedules['date_display'] = df_schedules['date'].dt.strftime('%m월 %d일')
             df_schedules['weekday'] = df_schedules['date'].dt.day_name()
@@ -824,6 +852,8 @@ if query_button:
                 'Thursday': '목', 'Friday': '금', 'Saturday': '토', 'Sunday': '일'
             }
             df_schedules['weekday'] = df_schedules['weekday'].map(weekday_ko)
+            # 시간 정보 추출 (HH:MM 형식)
+            df_schedules['time_display'] = df_schedules['etd_time'].str[:5] if 'etd_time' in df_schedules.columns else ''
             df_schedules['date'] = df_schedules['date'].dt.date
             
             if df_schedules.empty:
@@ -834,6 +864,53 @@ if query_button:
                 # route_id 목록 가져오기 (중복 제거)
                 route_ids = df_schedules['route_id'].unique().tolist()
                 route_ids_str = ','.join(map(str, route_ids))
+                
+                # TSL 필터링을 위한 arrival port 조건 준비
+                # Azure SQL에서는 Cross-database 쿼리 불가 → Python에서 필터링
+                tsl_arrival_filter = ""
+                tsl_arrival_join = ""
+                tsl_valid_schedule_ids = None  # TSL 도착지 필터용
+                
+                if is_tsl and selected_destination != '전체':
+                    arrival_port_id = TSL_PORT_IDS.get(selected_destination)
+                    if arrival_port_id:
+                        # neohelios_base에서 schedule_id → port_id 매핑 가져오기
+                        conn_base_for_tsl = pyodbc.connect(conn_string_base)
+                        port_mapping_query = f"""
+                            SELECT cs.id AS schedule_id, ps.port_id
+                            FROM coastal_schedules cs
+                            INNER JOIN proforma_schedules ps ON cs.proforma_schedule_id = ps.id
+                            WHERE cs.id IN ({schedule_ids})
+                        """
+                        df_port_mapping = pd.read_sql(port_mapping_query, conn_base_for_tsl)
+                        conn_base_for_tsl.close()
+                        
+                        # arrival_schedule_id가 선택한 도착 port인 티켓만 조회하기 위해
+                        # 해당 port_id를 가진 schedule_id 목록 생성
+                        arrival_schedule_ids = df_port_mapping[df_port_mapping['port_id'] == arrival_port_id]['schedule_id'].tolist()
+                        if arrival_schedule_ids:
+                            arrival_ids_str = ','.join(map(str, arrival_schedule_ids))
+                            tsl_arrival_filter = f" AND t.arrival_schedule_id IN ({arrival_ids_str})"
+                
+                # TSL 출발지 필터 (departure_schedule_id의 port)
+                tsl_departure_filter = ""
+                if is_tsl and selected_origin != '전체':
+                    origin_port_id = TSL_PORT_IDS.get(selected_origin)
+                    if origin_port_id:
+                        # departure_schedule_id의 port 확인
+                        filtered_schedule_ids = df_schedules[df_schedules['departure_port_id'] == origin_port_id]['schedule_id'].tolist()
+                        if filtered_schedule_ids:
+                            schedule_ids = ','.join(map(str, filtered_schedule_ids))
+                            # df_schedules도 필터링
+                            df_schedules = df_schedules[df_schedules['departure_port_id'] == origin_port_id].copy()
+                        else:
+                            st.warning("선택한 출발지에 해당하는 스케줄이 없습니다.")
+                            schedule_ids = ""
+                
+                # schedule_ids가 비어있으면 조회 중단
+                if not schedule_ids:
+                    st.warning("조건에 맞는 스케줄이 없습니다.")
+                    st.stop()
                 
                 # 2. 전체 객실 수 조회 (선택한 route 기준)
                 conn_cruise = pyodbc.connect(conn_string_cruise)
@@ -876,12 +953,14 @@ if query_button:
                         FROM tickets t
                         INNER JOIN rooms r ON t.on_boarding_room_id = r.id
                         INNER JOIN grades g ON r.grade_id = g.id
+                        {tsl_arrival_join}
                         WHERE t.departure_schedule_id IN ({schedule_ids})
                           AND t.deleted_at IS NULL
                           AND r.deleted_at IS NULL
                           AND g.deleted_at IS NULL
                           AND t.on_boarding_room_id IS NOT NULL
                           AND t.status NOT LIKE 'REFUND%'
+                          {tsl_arrival_filter}
                         GROUP BY t.departure_schedule_id, t.on_boarding_room_id, g.code
                     )
                     SELECT 
@@ -896,29 +975,72 @@ if query_button:
                 df_bookings = pd.read_sql(booking_query, conn_cruise)
                 
                 # 3-1. 승객 수 조회 (티켓 수 기반)
+                # 확정: 실제 티켓 수
+                # 블록: 각 객실별로 MIN(블록 티켓 수, 정원)을 적용하여 합산
+                # 정원: OR,BS,PR,RS=2명, IC,OC,DA=4명, GR=16명
                 passenger_query = f"""
+                    WITH confirmed_count AS (
+                        SELECT 
+                            t.departure_schedule_id,
+                            g.code AS grade,
+                            COUNT(*) AS confirmed_passengers
+                        FROM tickets t
+                        INNER JOIN rooms r ON t.on_boarding_room_id = r.id
+                        INNER JOIN grades g ON r.grade_id = g.id
+                        {tsl_arrival_join}
+                        WHERE t.departure_schedule_id IN ({schedule_ids})
+                          AND t.deleted_at IS NULL
+                          AND r.deleted_at IS NULL
+                          AND g.deleted_at IS NULL
+                          AND t.on_boarding_room_id IS NOT NULL
+                          AND t.is_temporary = 0
+                          AND t.status NOT LIKE 'REFUND%'
+                          {tsl_arrival_filter}
+                        GROUP BY t.departure_schedule_id, g.code
+                    ),
+                    room_blocked AS (
+                        SELECT 
+                            t.departure_schedule_id,
+                            t.on_boarding_room_id,
+                            g.code AS grade,
+                            COUNT(*) AS blocked_tickets,
+                            CASE 
+                                WHEN g.code IN ('OR', 'BS', 'PR', 'RS') THEN 2
+                                WHEN g.code IN ('IC', 'OC', 'DA') THEN 4
+                                WHEN g.code = 'GR' THEN 16
+                                ELSE 2
+                            END AS capacity
+                        FROM tickets t
+                        INNER JOIN rooms r ON t.on_boarding_room_id = r.id
+                        INNER JOIN grades g ON r.grade_id = g.id
+                        {tsl_arrival_join}
+                        WHERE t.departure_schedule_id IN ({schedule_ids})
+                          AND t.deleted_at IS NULL
+                          AND r.deleted_at IS NULL
+                          AND g.deleted_at IS NULL
+                          AND t.on_boarding_room_id IS NOT NULL
+                          AND t.is_temporary = 1
+                          AND t.status NOT LIKE 'REFUND%'
+                          {tsl_arrival_filter}
+                        GROUP BY t.departure_schedule_id, t.on_boarding_room_id, g.code
+                    ),
+                    blocked_count AS (
+                        SELECT 
+                            departure_schedule_id,
+                            grade,
+                            SUM(CASE WHEN blocked_tickets <= capacity THEN blocked_tickets ELSE capacity END) AS blocked_passengers
+                        FROM room_blocked
+                        GROUP BY departure_schedule_id, grade
+                    )
                     SELECT 
-                        t.departure_schedule_id AS schedule_id,
-                        g.code AS grade,
-                        COUNT(CASE 
-                            WHEN t.is_temporary = 0 
-                                 AND t.status NOT LIKE 'REFUND%'
-                            THEN 1 
-                        END) AS confirmed_passengers,
-                        COUNT(CASE 
-                            WHEN t.is_temporary = 1 
-                                 AND t.status NOT LIKE 'REFUND%'
-                            THEN 1 
-                        END) AS blocked_passengers
-                    FROM tickets t
-                    INNER JOIN rooms r ON t.on_boarding_room_id = r.id
-                    INNER JOIN grades g ON r.grade_id = g.id
-                    WHERE t.departure_schedule_id IN ({schedule_ids})
-                      AND t.deleted_at IS NULL
-                      AND r.deleted_at IS NULL
-                      AND g.deleted_at IS NULL
-                      AND t.on_boarding_room_id IS NOT NULL
-                    GROUP BY t.departure_schedule_id, g.code
+                        COALESCE(c.departure_schedule_id, b.departure_schedule_id) AS schedule_id,
+                        COALESCE(c.grade, b.grade) AS grade,
+                        COALESCE(c.confirmed_passengers, 0) AS confirmed_passengers,
+                        COALESCE(b.blocked_passengers, 0) AS blocked_passengers
+                    FROM confirmed_count c
+                    FULL OUTER JOIN blocked_count b 
+                        ON c.departure_schedule_id = b.departure_schedule_id 
+                        AND c.grade = b.grade
                 """
                 df_passengers = pd.read_sql(passenger_query, conn_cruise)
                 
@@ -945,12 +1067,14 @@ if query_button:
                         FROM tickets t
                         INNER JOIN rooms r ON t.on_boarding_room_id = r.id
                         INNER JOIN grades g ON r.grade_id = g.id
+                        {tsl_arrival_join}
                         WHERE t.departure_schedule_id IN ({schedule_ids})
                           AND t.deleted_at IS NULL
                           AND r.deleted_at IS NULL
                           AND g.deleted_at IS NULL
                           AND t.on_boarding_room_id IS NOT NULL
                           AND t.status NOT LIKE 'REFUND%'
+                          {tsl_arrival_filter}
                         GROUP BY t.departure_schedule_id, t.on_boarding_room_id, r.room_number, g.code
                     )
                     SELECT 
@@ -1008,6 +1132,8 @@ if query_button:
                             'date': schedule['date'],
                             'date_display': schedule['date_display'],
                             'weekday': schedule['weekday'],
+                            'time_display': schedule.get('time_display', ''),
+                            'direction': schedule.get('direction', ''),
                             'grade': grade_info['grade'],
                             'total_rooms': grade_info['total_rooms']
                         })
@@ -1024,9 +1150,8 @@ if query_button:
                 df_result['vacant_rooms'] = df_result['total_rooms'] - df_result['confirmed_rooms'] - df_result['blocked_rooms']
                 df_result['vacant_rooms'] = df_result['vacant_rooms'].clip(lower=0).astype(int)
                 
-                # 5. 날짜별 총계 계산 (schedule_id도 포함)
-                df_totals = df_result.groupby(['date', 'date_display', 'weekday']).agg({
-                    'schedule_id': 'first',  # 첫 번째 schedule_id 사용
+                # 5. 스케줄별 총계 계산 (하루에 여러 편 운항 고려)
+                df_totals = df_result.groupby(['schedule_id', 'date', 'date_display', 'weekday', 'time_display', 'direction']).agg({
                     'confirmed_rooms': 'sum',
                     'blocked_rooms': 'sum',
                     'vacant_rooms': 'sum'
@@ -1036,25 +1161,60 @@ if query_button:
                 # 6. 총계와 등급별 데이터 합치기
                 df_with_totals = pd.concat([df_totals, df_result], ignore_index=True)
                 
-                # 7. 날짜 표시 형식
-                df_with_totals['날짜'] = df_with_totals['date_display'] + ' (' + df_with_totals['weekday'] + ')'
+                # 7. 날짜+시간 표시 형식 (하루에 여러 편이면 시간 표시)
+                # 같은 날짜에 여러 스케줄이 있는지 확인
+                schedules_per_date = df_schedules.groupby('date').size()
+                has_multiple_schedules = (schedules_per_date > 1).any()
                 
-                # 8. 등급 순서 정의 (총계를 먼저, 모든 등급 포함)
-                grade_order = ['총계', 'OR', 'PR', 'RS', 'BS', 'OC', 'IC', 'DA']
+                if has_multiple_schedules:
+                    # 시간 표시 포함
+                    df_with_totals['날짜'] = df_with_totals['date_display'] + ' ' + df_with_totals['time_display'] + ' (' + df_with_totals['weekday'] + ')'
+                else:
+                    # 기존 방식 (날짜만)
+                    df_with_totals['날짜'] = df_with_totals['date_display'] + ' (' + df_with_totals['weekday'] + ')'
+                
+                # 8. 등급 순서 정의 (선박/항로별로 다름)
+                # PSMC (route 1-4): OR, PR, RS, BS, OC, IC, DA
+                # PSTL (route 5): PRM, ECM
+                # PSGR (route 6-11): FC, BUS, STA
+                if selected_vessel == 'PSMC':
+                    grade_order = ['총계', 'OR', 'PR', 'RS', 'BS', 'OC', 'IC', 'DA']
+                elif selected_vessel == 'PSTL':
+                    grade_order = ['총계', 'PRM', 'ECM']
+                else:  # PSGR
+                    grade_order = ['총계', 'FC', 'BUS', 'STA']
+                
+                # DB에 있는 등급만 필터링
                 existing_grades = [g for g in grade_order if g in df_with_totals['grade'].unique()]
+                # grade_order에 없는 등급도 추가 (혹시 새로운 등급이 있을 경우)
+                for g in df_with_totals['grade'].unique():
+                    if g not in existing_grades and g != '총계':
+                        existing_grades.append(g)
                 
-                # 9. 날짜별로 한 행씩 구성 (schedule_id 포함)
+                # 9. 스케줄별로 한 행씩 구성 (하루에 여러 편 운항 고려)
                 result_rows = []
-                for date_val in sorted(df_with_totals['date'].unique()):
-                    date_data = df_with_totals[df_with_totals['date'] == date_val]
+                # schedule_id 순으로 정렬 (날짜+시간 순)
+                for schedule_id in df_schedules.sort_values(['date', 'etd_time'])['schedule_id'].unique():
+                    schedule_data = df_with_totals[df_with_totals['schedule_id'] == schedule_id]
+                    if schedule_data.empty:
+                        continue
+                    
+                    # 총계의 확정+블록이 0이면 스킵 (예약이 하나도 없는 스케줄)
+                    total_data = schedule_data[schedule_data['grade'] == '총계']
+                    if not total_data.empty:
+                        total_confirmed = int(total_data['confirmed_rooms'].iloc[0])
+                        total_blocked = int(total_data['blocked_rooms'].iloc[0])
+                        if total_confirmed == 0 and total_blocked == 0:
+                            continue  # 예약 없는 스케줄 숨기기
+                    
                     row = {
-                        '날짜': date_data['날짜'].iloc[0],
-                        'schedule_id': date_data['schedule_id'].iloc[0],
-                        'date_raw': str(date_val)
+                        '날짜': schedule_data['날짜'].iloc[0],
+                        'schedule_id': schedule_id,
+                        'date_raw': str(schedule_data['date'].iloc[0])
                     }
                     
                     for grade in existing_grades:
-                        grade_data = date_data[date_data['grade'] == grade]
+                        grade_data = schedule_data[schedule_data['grade'] == grade]
                         if not grade_data.empty:
                             row[f'{grade}_확정'] = int(grade_data['confirmed_rooms'].iloc[0])
                             row[f'{grade}_블록'] = int(grade_data['blocked_rooms'].iloc[0])
@@ -1171,43 +1331,88 @@ if query_button:
                 html_table += '</tbody></table></div>'
                 
                 # ========== 승객 수 기반 테이블 생성 ==========
+                # 등급별 정원 정의 (OR,BS,PR,RS=2명, IC,OC,DA=4명, GR=16명)
+                grade_capacity = {
+                    'OR': 2, 'BS': 2, 'PR': 2, 'RS': 2,
+                    'IC': 4, 'OC': 4, 'DA': 4,
+                    'GR': 16,
+                    'PRM': 1, 'ECM': 1,  # PSTL 좌석
+                    'FC': 1, 'BUS': 1, 'STA': 1  # PSGR 좌석
+                }
+                
                 # 승객 데이터 병합
-                df_pass_result = df_all[['schedule_id', 'date', 'date_display', 'weekday', 'grade']].merge(
+                df_pass_result = df_all[['schedule_id', 'date', 'date_display', 'weekday', 'grade', 'total_rooms']].merge(
                     df_passengers, on=['schedule_id', 'grade'], how='left'
                 )
                 df_pass_result['confirmed_passengers'] = df_pass_result['confirmed_passengers'].fillna(0).astype(int)
                 df_pass_result['blocked_passengers'] = df_pass_result['blocked_passengers'].fillna(0).astype(int)
                 
-                # 승객 총계 계산
-                df_pass_totals = df_pass_result.groupby(['date', 'date_display', 'weekday']).agg({
+                # 등급별 총 정원 계산 (정원 × 객실수)
+                df_pass_result['capacity'] = df_pass_result['grade'].map(grade_capacity).fillna(2).astype(int)
+                df_pass_result['total_capacity'] = df_pass_result['total_rooms'] * df_pass_result['capacity']
+                
+                # 잔여 계산 (총 정원 - 확정 - 블록)
+                df_pass_result['remaining_passengers'] = (
+                    df_pass_result['total_capacity'] - 
+                    df_pass_result['confirmed_passengers'] - 
+                    df_pass_result['blocked_passengers']
+                ).clip(lower=0).astype(int)
+                
+                # 승객 총계 계산 (스케줄별)
+                df_pass_totals = df_pass_result.groupby(['schedule_id', 'date', 'date_display', 'weekday']).agg({
                     'confirmed_passengers': 'sum',
-                    'blocked_passengers': 'sum'
+                    'blocked_passengers': 'sum',
+                    'remaining_passengers': 'sum'
                 }).reset_index()
                 df_pass_totals['grade'] = '총계'
-                df_pass_totals['schedule_id'] = df_pass_result.groupby('date')['schedule_id'].first().values
                 
-                # 승객 총계와 등급별 데이터 합치기
-                df_pass_with_totals = pd.concat([df_pass_totals, df_pass_result], ignore_index=True)
-                df_pass_with_totals['날짜'] = df_pass_with_totals['date_display'] + ' (' + df_pass_with_totals['weekday'] + ')'
+                # 승객 총계와 등급별 데이터 합치기 (remaining_passengers 컬럼 포함)
+                df_pass_with_totals = pd.concat([df_pass_totals, df_pass_result[['schedule_id', 'date', 'date_display', 'weekday', 'grade', 'confirmed_passengers', 'blocked_passengers', 'remaining_passengers']]], ignore_index=True)
                 
-                # 승객 날짜별로 한 행씩 구성
+                # 날짜+시간 표시 (객실 탭과 동일)
+                if has_multiple_schedules:
+                    # 스케줄별 시간 정보 가져오기
+                    schedule_time_map = df_schedules.set_index('schedule_id')['time_display'].to_dict()
+                    df_pass_with_totals['time_display'] = df_pass_with_totals['schedule_id'].map(schedule_time_map).fillna('')
+                    df_pass_with_totals['날짜'] = df_pass_with_totals['date_display'] + ' ' + df_pass_with_totals['time_display'] + ' (' + df_pass_with_totals['weekday'] + ')'
+                else:
+                    df_pass_with_totals['날짜'] = df_pass_with_totals['date_display'] + ' (' + df_pass_with_totals['weekday'] + ')'
+                
+                # 승객 스케줄별로 한 행씩 구성 (공실 포함)
                 pass_result_rows = []
-                for date_val in sorted(df_pass_with_totals['date'].unique()):
-                    date_data = df_pass_with_totals[df_pass_with_totals['date'] == date_val]
+                for schedule_id in df_schedules.sort_values(['date', 'etd_time'])['schedule_id'].unique():
+                    schedule_data = df_pass_with_totals[df_pass_with_totals['schedule_id'] == schedule_id]
+                    # 같은 스케줄의 객실 공실 정보 가져오기
+                    room_schedule_data = df_with_totals[df_with_totals['schedule_id'] == schedule_id]
+                    
+                    if schedule_data.empty:
+                        continue
+                    
+                    # 총계의 확정+블록이 0이면 스킵 (예약이 하나도 없는 스케줄)
+                    total_data = schedule_data[schedule_data['grade'] == '총계']
+                    if not total_data.empty:
+                        total_confirmed = int(total_data['confirmed_passengers'].iloc[0])
+                        total_blocked = int(total_data['blocked_passengers'].iloc[0])
+                        if total_confirmed == 0 and total_blocked == 0:
+                            continue  # 예약 없는 스케줄 숨기기
+                    
                     row = {
-                        '날짜': date_data['날짜'].iloc[0],
-                        'schedule_id': date_data['schedule_id'].iloc[0],
-                        'date_raw': str(date_val)
+                        '날짜': schedule_data['날짜'].iloc[0],
+                        'schedule_id': schedule_id,
+                        'date_raw': str(schedule_data['date'].iloc[0])
                     }
                     
                     for grade in existing_grades:
-                        grade_data = date_data[date_data['grade'] == grade]
+                        grade_data = schedule_data[schedule_data['grade'] == grade]
+                        
                         if not grade_data.empty:
                             row[f'{grade}_확정'] = int(grade_data['confirmed_passengers'].iloc[0])
                             row[f'{grade}_블록'] = int(grade_data['blocked_passengers'].iloc[0])
+                            row[f'{grade}_잔여'] = int(grade_data['remaining_passengers'].iloc[0])
                         else:
                             row[f'{grade}_확정'] = 0
                             row[f'{grade}_블록'] = 0
+                            row[f'{grade}_잔여'] = 0
                     
                     pass_result_rows.append(row)
                 
@@ -1241,8 +1446,13 @@ if query_button:
 if 'query_result' in st.session_state:
     result = st.session_state.query_result
     
+    # 선박에 따라 탭 이름 결정 (좌석 기반 vs 객실 기반)
+    vessel_name = result.get('vessel_name', 'PSMC')
+    is_seat_based = vessel_name in ['PSTL', 'PSGR']
+    tab1_name = "좌석" if is_seat_based else "객실"
+    
     # 탭 생성
-    tab1, tab2 = st.tabs(["객실", "승객"])
+    tab1, tab2 = st.tabs([tab1_name, "승객"])
     
     with tab1:
         # 객실 테이블 렌더링 (JavaScript 모달 포함)
@@ -1502,7 +1712,7 @@ if 'query_result' in st.session_state:
             </div>
         </div>
         """, unsafe_allow_html=True)
-                
+        
     with tab2:
         # 승객 테이블 생성
         final_df_passengers = result['final_df_passengers']
@@ -1512,7 +1722,7 @@ if 'query_result' in st.session_state:
         html_pass_table = '<div class="responsive-table-container"><table style="width: 100%; border-collapse: collapse; background: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">'
         
         # 헤더 1행: 등급명
-        html_pass_table += '<thead><tr><th rowspan="2" style="background: #0a0a0a; color: #ffffff; padding: 22px; border: none; border-right: 2px solid #2a2a2a; font-weight: 500; font-size: 18px; text-transform: uppercase; letter-spacing: 1px;">Date</th>'
+        html_pass_table += '<thead><tr><th rowspan="2" class="sticky-date-header" style="background: #0a0a0a; color: #ffffff; padding: 22px; border: none; border-right: 2px solid #2a2a2a; font-weight: 500; font-size: 18px; text-transform: uppercase; letter-spacing: 1px;">Date</th>'
         for idx, grade in enumerate(existing_grades):
             if grade == '총계':
                 bg_color = '#1a1a1a'
@@ -1522,17 +1732,18 @@ if 'query_result' in st.session_state:
             is_last_grade = (idx == len(existing_grades) - 1)
             border_right = '1px solid #2a2a2a' if is_last_grade else '2px solid #4a4a4a'
             
-            html_pass_table += f'<th colspan="2" style="background: {bg_color}; color: #ffffff; padding: 22px; border: none; border-right: {border_right}; font-weight: 500; font-size: 18px; text-transform: uppercase; letter-spacing: 1px;">{grade}</th>'
+            html_pass_table += f'<th colspan="3" style="background: {bg_color}; color: #ffffff; padding: 22px; border: none; border-right: {border_right}; font-weight: 500; font-size: 18px; text-transform: uppercase; letter-spacing: 1px;">{grade}</th>'
         html_pass_table += '</tr>'
         
-        # 헤더 2행: 확정/블록
+        # 헤더 2행: 확정/블록/잔여
         html_pass_table += '<tr>'
         for idx, grade in enumerate(existing_grades):
             is_last_grade = (idx == len(existing_grades) - 1)
             grade_separator = '1px solid #e0e0e0' if is_last_grade else '2px solid #d0d0d0'
             
             html_pass_table += '<th style="background: #f5f5f5; color: #6b6b6b; text-align: center; padding: 16px; font-weight: 600; border: none; border-right: 1px solid #e0e0e0; border-top: 1px solid #e0e0e0; font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px;">확정</th>'
-            html_pass_table += f'<th style="background: #f5f5f5; color: #6b6b6b; text-align: center; padding: 16px; font-weight: 600; border: none; border-right: {grade_separator}; border-top: 1px solid #e0e0e0; font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px;">블록</th>'
+            html_pass_table += '<th style="background: #f5f5f5; color: #6b6b6b; text-align: center; padding: 16px; font-weight: 600; border: none; border-right: 1px solid #e0e0e0; border-top: 1px solid #e0e0e0; font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px;">블록</th>'
+            html_pass_table += f'<th style="background: #fffef5; color: #6b6b6b; text-align: center; padding: 16px; font-weight: 600; border: none; border-right: {grade_separator}; border-top: 1px solid #e0e0e0; font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px;">잔여</th>'
         html_pass_table += '</tr></thead>'
         
         # 바디
@@ -1541,11 +1752,12 @@ if 'query_result' in st.session_state:
             row_bg = '#ffffff' if idx % 2 == 0 else '#fafafa'
             
             html_pass_table += '<tr style="border-bottom: 1px solid #efefef; transition: background 0.2s ease;">'
-            html_pass_table += f'<td style="background: {row_bg}; color: #0a0a0a; font-weight: 500; padding: 22px; border: none; border-right: 2px solid #d0d0d0; font-size: 17px;">{row["날짜"]}</td>'
+            html_pass_table += f'<td class="sticky-date-cell" style="background: {row_bg}; color: #0a0a0a; font-weight: 500; padding: 22px; border: none; border-right: 2px solid #d0d0d0; font-size: 17px;">{row["날짜"]}</td>'
             
             for idx_g, grade in enumerate(existing_grades):
                 confirmed = int(row.get(f'{grade}_확정', 0))
                 blocked = int(row.get(f'{grade}_블록', 0))
+                remaining = int(row.get(f'{grade}_잔여', 0))
                 
                 is_last_grade = (idx_g == len(existing_grades) - 1)
                 grade_separator = '1px solid #efefef' if is_last_grade else '2px solid #d0d0d0'
@@ -1554,7 +1766,15 @@ if 'query_result' in st.session_state:
                 html_pass_table += f'<td style="background: {row_bg}; color: #0a0a0a; text-align: center; padding: 20px; font-weight: 600; border: none; border-right: 1px solid #efefef; font-size: 18px;">{confirmed}</td>'
                 
                 # 블록
-                html_pass_table += f'<td style="background: {row_bg}; color: #6b6b6b; text-align: center; padding: 20px; font-weight: 500; border: none; border-right: {grade_separator}; font-size: 18px;">{blocked}</td>'
+                html_pass_table += f'<td style="background: {row_bg}; color: #6b6b6b; text-align: center; padding: 20px; font-weight: 500; border: none; border-right: 1px solid #efefef; font-size: 18px;">{blocked}</td>'
+                
+                # 잔여 (노란색 배경, 0이면 빨간색)
+                if remaining == 0:
+                    remaining_style = f'background: #fff5f5; color: #c62828; text-align: center; padding: 20px; font-weight: 700; border: none; border-right: {grade_separator}; border-left: 3px solid #ef5350; font-size: 19px;'
+                else:
+                    yellow_bg = '#fffef5' if row_bg == '#ffffff' else '#fffdf0'
+                    remaining_style = f'background: {yellow_bg}; color: #1565c0; text-align: center; padding: 20px; font-weight: 600; border: none; border-right: {grade_separator}; font-size: 18px;'
+                html_pass_table += f'<td style="{remaining_style}">{remaining}</td>'
             
             html_pass_table += '</tr>'
         html_pass_table += '</tbody></table></div>'
@@ -1572,7 +1792,15 @@ if 'query_result' in st.session_state:
                 </div>
                 <div style="display: flex; align-items: center;">
                     <span style="display: inline-block; width: 28px; height: 28px; background: #6b6b6b; border-radius: 1px; margin-right: 14px;"></span>
-                    <span style="color: #6b6b6b; font-size: 16px; font-weight: 500;">블록 (점유만 된 상태)</span>
+                    <span style="color: #6b6b6b; font-size: 16px; font-weight: 500;">블록 (점유만 된 상태, 정원 제한 적용)</span>
+                </div>
+                <div style="display: flex; align-items: center;">
+                    <span style="display: inline-block; width: 28px; height: 28px; background: #fffef5; border: 1px solid #1565c0; border-radius: 1px; margin-right: 14px;"></span>
+                    <span style="color: #1565c0; font-size: 16px; font-weight: 500;">잔여 (예약 가능 인원)</span>
+                </div>
+                <div style="display: flex; align-items: center;">
+                    <span style="display: inline-block; width: 28px; height: 28px; background: #c62828; border-radius: 1px; margin-right: 14px;"></span>
+                    <span style="color: #c62828; font-size: 16px; font-weight: 600;">예약불가 (공실 0개)</span>
                 </div>
             </div>
         </div>
@@ -1706,15 +1934,16 @@ if 'query_result' in st.session_state:
     
     for grade in existing_grades:
         ws2.cell(1, current_col, grade)
-        ws2.merge_cells(start_row=1, start_column=current_col, end_row=1, end_column=current_col + 1)
-        current_col += 2
+        ws2.merge_cells(start_row=1, start_column=current_col, end_row=1, end_column=current_col + 2)
+        current_col += 3
     
-    # 헤더 2행: 확정/블록 (공실 없음)
+    # 헤더 2행: 확정/블록/잔여
     current_col = 2
     for grade in existing_grades:
         ws2.cell(2, current_col, '확정')
         ws2.cell(2, current_col + 1, '블록')
-        current_col += 2
+        ws2.cell(2, current_col + 2, '잔여')
+        current_col += 3
     
     # 데이터 행
     for row_idx, row in passenger_final_df.iterrows():
@@ -1726,7 +1955,8 @@ if 'query_result' in st.session_state:
         for grade in existing_grades:
             ws2.cell(excel_row, current_col, int(row.get(f'{grade}_확정', 0)))
             ws2.cell(excel_row, current_col + 1, int(row.get(f'{grade}_블록', 0)))
-            current_col += 2
+            ws2.cell(excel_row, current_col + 2, int(row.get(f'{grade}_잔여', 0)))
+            current_col += 3
     
     # 스타일링 (시트 2)
     for col in range(1, ws2.max_column + 1):
@@ -1758,7 +1988,13 @@ if 'query_result' in st.session_state:
             ws2.cell(row_idx, current_col + 1).border = thin_border
             ws2.cell(row_idx, current_col + 1).font = Font(color='6b6b6b', size=11)
             
-            current_col += 2
+            # 잔여 (노란색 배경)
+            ws2.cell(row_idx, current_col + 2).alignment = Alignment(horizontal='center', vertical='center')
+            ws2.cell(row_idx, current_col + 2).border = thin_border
+            ws2.cell(row_idx, current_col + 2).fill = yellow_fill
+            ws2.cell(row_idx, current_col + 2).font = Font(color='1565c0', size=11, bold=True)
+            
+            current_col += 3
     
     # 컬럼 너비 조정 (시트 2)
     ws2.column_dimensions['A'].width = 18
