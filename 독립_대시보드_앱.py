@@ -15,7 +15,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # set_page_config는 반드시 첫 번째 Streamlit 명령이어야 함
-st.set_page_config(page_title="객실 현황 대시보드", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="여객 현황 대시보드", layout="wide", initial_sidebar_state="collapsed")
 
 # DB 설정
 try:
@@ -47,7 +47,7 @@ st.markdown("""
         NEOHELIOS CRUISE
     </h1>
     <p style="font-size: 14px; font-weight: 400; color: #88949C; letter-spacing: -0.5px; font-family: 'Noto Sans KR', sans-serif;">
-        객실 잔여 현황 대시보드
+        여객 현황 대시보드
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -700,6 +700,30 @@ TSL_PORT_IDS = {
     'HTK': 3271    # JPHTK - Hitakatsu
 }
 
+# port_id → 포트 코드 역방향 매핑
+PORT_CODE_MAP = {v: k for k, v in TSL_PORT_IDS.items()}
+# PSMC용 추가 포트
+PORT_CODE_MAP.update({
+    1777: 'PUS',    # 부산
+    1633: 'IZH',    # 이즈하라
+    3271: 'HTK',    # 히타카츠
+    1693: 'OSA',    # 오사카 (JPOSA)
+    1746: 'FUK',    # 후쿠오카
+})
+
+# 출발지/도착지에 따른 direction 결정용 매핑
+route_direction_map = {
+    'BOC': {'first': 'PUS', 'second': 'OSA'},
+    'ONC': {'first': 'PUS', 'second': 'PUS'},
+    'KSC': {'first': 'PUS', 'second': 'PUS'},
+    'TSL': {'first': 'PUS', 'second': 'IZH'},
+    'EAS': {'first': 'PUS', 'second': 'FUK'},
+    'SCC': {'first': 'PUS', 'second': 'FUK'},
+    'FWC': {'first': 'PUS', 'second': 'FUK'},
+    'SND': {'first': 'PUS', 'second': 'FUK'},
+    'NFW': {'first': 'PUS', 'second': 'FUK'},
+}
+
 # 좌석 기반 선박 (1객실 = 1승객)
 seat_based_vessels = ['PSTL', 'PSGR']
 
@@ -793,12 +817,6 @@ if query_button:
             is_tsl = (selected_route == 'TSL')
             
             # 출발지/도착지에 따른 direction 결정 (TSL 제외)
-            route_direction_map = {
-                'BOC': {'first': 'PUS', 'second': 'OSA'},
-                'ONC': {'first': 'PUS', 'second': 'PUS'},
-                'KSC': {'first': 'PUS', 'second': 'PUS'},
-            }
-            
             directions = []
             if not is_tsl:
                 route_ports_info = route_direction_map.get(selected_route, {'first': 'PUS', 'second': 'OSA'})
@@ -854,7 +872,8 @@ if query_button:
                             CONVERT(VARCHAR, cs.etd, 23) AS etd_date,
                             CONVERT(VARCHAR, cs.etd, 108) AS etd_time,
                             voy.route_id,
-                            voy.direction
+                            voy.direction,
+                            ps.port_id AS departure_port_id
                         FROM coastal_schedules cs
                         LEFT JOIN proforma_schedules ps ON cs.proforma_schedule_id = ps.id
                         LEFT JOIN voyages voy ON ps.voyage_id = voy.id
@@ -888,6 +907,12 @@ if query_button:
             # 시간 정보 추출 (HH:MM 형식)
             df_schedules['time_display'] = df_schedules['etd_time'].str[:5] if 'etd_time' in df_schedules.columns else ''
             df_schedules['date'] = df_schedules['date'].dt.date
+            
+            # 출발 포트 코드 추가
+            if 'departure_port_id' in df_schedules.columns:
+                df_schedules['departure_port'] = df_schedules['departure_port_id'].map(PORT_CODE_MAP).fillna('-')
+            else:
+                df_schedules['departure_port'] = '-'
             
             if df_schedules.empty:
                 st.warning("해당 기간에 스케줄이 없습니다.")
@@ -1249,9 +1274,11 @@ if query_button:
                 # 4. 승객 분석 데이터 조회 (확정 승객만)
                 # 성별, 국적, 연령대 분석용
                 # birth_day는 datetimeoffset 타입이라 CONVERT로 date로 변환
+                # arrival_schedule_id 추가 (생성처별 분석용)
                 passenger_analysis_query = f"""
                     SELECT 
                         t.departure_schedule_id AS schedule_id,
+                        t.arrival_schedule_id,
                         p.sex,
                         p.nationality,
                         CONVERT(date, p.birth_day) AS birth_day,
@@ -1273,9 +1300,19 @@ if query_button:
                 conn_cruise.close()
                 
                 # 4. 데이터 병합 및 공실 계산
+                # 출발/도착 포트 계산
+                route_ports_info = route_direction_map.get(selected_route, {'first': '-', 'second': '-'})
+                first_port = route_ports_info.get('first', '-')
+                second_port = route_ports_info.get('second', '-')
+                
                 # 모든 스케줄 x 모든 등급 조합 생성
                 all_combinations = []
                 for _, schedule in df_schedules.iterrows():
+                    direction = schedule.get('direction', '')
+                    dep_port = schedule.get('departure_port', '-')
+                    # E방향: 첫번째→두번째, W방향: 두번째→첫번째
+                    arr_port = second_port if direction == 'E' else (first_port if direction == 'W' else '-')
+                    
                     for _, grade_info in df_total_rooms.iterrows():
                         all_combinations.append({
                             'schedule_id': schedule['schedule_id'],
@@ -1283,7 +1320,9 @@ if query_button:
                             'date_display': schedule['date_display'],
                             'weekday': schedule['weekday'],
                             'time_display': schedule.get('time_display', ''),
-                            'direction': schedule.get('direction', ''),
+                            'direction': direction,
+                            'departure_port': dep_port,
+                            'arrival_port': arr_port,
                             'grade': grade_info['grade'],
                             'total_rooms': grade_info['total_rooms']
                         })
@@ -1301,7 +1340,7 @@ if query_button:
                 df_result['vacant_rooms'] = df_result['vacant_rooms'].clip(lower=0).astype(int)
                 
                 # 5. 스케줄별 총계 계산 (하루에 여러 편 운항 고려)
-                df_totals = df_result.groupby(['schedule_id', 'date', 'date_display', 'weekday', 'time_display', 'direction']).agg({
+                df_totals = df_result.groupby(['schedule_id', 'date', 'date_display', 'weekday', 'time_display', 'direction', 'departure_port', 'arrival_port']).agg({
                     'confirmed_rooms': 'sum',
                     'blocked_rooms': 'sum',
                     'vacant_rooms': 'sum'
@@ -1360,7 +1399,9 @@ if query_button:
                     row = {
                         '날짜': schedule_data['날짜'].iloc[0],
                         'schedule_id': schedule_id,
-                        'date_raw': str(schedule_data['date'].iloc[0])
+                        'date_raw': str(schedule_data['date'].iloc[0]),
+                        'departure_port': schedule_data['departure_port'].iloc[0] if 'departure_port' in schedule_data.columns else '-',
+                        'arrival_port': schedule_data['arrival_port'].iloc[0] if 'arrival_port' in schedule_data.columns else '-'
                     }
                     
                     for grade in existing_grades:
@@ -1379,8 +1420,8 @@ if query_button:
                 # 10. DataFrame 생성
                 final_df = pd.DataFrame(result_rows)
                 
-                # 11. 컬럼 순서 정리 (schedule_id, date_raw 유지)
-                ordered_cols = ['날짜', 'schedule_id', 'date_raw']
+                # 11. 컬럼 순서 정리 (schedule_id, date_raw, departure_port, arrival_port 유지)
+                ordered_cols = ['날짜', 'schedule_id', 'date_raw', 'departure_port', 'arrival_port']
                 for grade in existing_grades:
                     ordered_cols.extend([f'{grade}_확정', f'{grade}_블록', f'{grade}_공실'])
                 
@@ -1393,7 +1434,9 @@ if query_button:
                 html_table = '<div class="responsive-table-container"><table style="width:100%; border-collapse: collapse; background: #FFFFFF; font-family: Noto Sans KR, sans-serif;">'
                 
                 # 헤더 1행: 등급명 - NEOHELIOS 디자인 시스템
-                html_table += '<thead><tr><th rowspan="2" class="sticky-date-header" style="background: #232A5E; color: #FAFCFE; padding: 12px 10px; border: none; border-right: 1px solid #3a4a7e; font-weight: 700; font-size: 12px; letter-spacing: -0.5px;">날짜</th>'
+                html_table += '<thead><tr><th rowspan="2" class="sticky-date-header" style="background: #232A5E; color: #FAFCFE; padding: 12px 10px; border: none; border-right: 1px solid #3a4a7e; font-weight: 700; font-size: 12px; letter-spacing: -0.5px; text-align: center;">날짜</th>'
+                html_table += '<th rowspan="2" style="background: #232A5E; color: #FAFCFE; padding: 12px 8px; border: none; border-right: 1px solid #3a4a7e; font-weight: 700; font-size: 12px; letter-spacing: -0.5px; text-align: center;">출발</th>'
+                html_table += '<th rowspan="2" style="background: #232A5E; color: #FAFCFE; padding: 12px 8px; border: none; border-right: 1px solid #3a4a7e; font-weight: 700; font-size: 12px; letter-spacing: -0.5px; text-align: center;">도착</th>'
                 for idx, grade in enumerate(existing_grades):
                     if grade == '총계':
                         bg_color = '#1a2148'
@@ -1403,7 +1446,7 @@ if query_button:
                     is_last_grade = (idx == len(existing_grades) - 1)
                     border_right = '1px solid #3a4a7e' if is_last_grade else '1px solid #3a4a7e'
                     
-                    html_table += f'<th colspan="3" style="background: {bg_color}; color: #FAFCFE; padding: 12px 10px; border: none; border-right: {border_right}; font-weight: 700; font-size: 12px; letter-spacing: -0.5px;">{grade}</th>'
+                    html_table += f'<th colspan="3" style="background: {bg_color}; color: #FAFCFE; padding: 12px 10px; border: none; border-right: {border_right}; font-weight: 700; font-size: 12px; letter-spacing: -0.5px; text-align: center;">{grade}</th>'
                 html_table += '</tr>'
                 
                 # 헤더 2행: 확정/블록/공실
@@ -1430,8 +1473,13 @@ if query_button:
                     schedule_id = int(schedule_id_raw) if pd.notna(schedule_id_raw) else 0
                     date_raw = row.get('date_raw', '')
                     
+                    dep_port = row.get('departure_port', '-')
+                    arr_port = row.get('arrival_port', '-')
+                    
                     html_table += '<tr style="border-bottom: 1px solid #DAE0E3; transition: background 0.15s ease;">'
-                    html_table += f'<td class="sticky-date-cell" style="background: {row_bg}; color: #0E0E2C; font-weight: 500; padding: 10px; border: none; border-right: 1px solid #DAE0E3; font-size: 14px; letter-spacing: -0.5px;">{row["날짜"]}</td>'
+                    html_table += f'<td class="sticky-date-cell" style="background: {row_bg}; color: #0E0E2C; font-weight: 500; padding: 10px; border: none; border-right: 1px solid #DAE0E3; font-size: 14px; letter-spacing: -0.5px; text-align: center;">{row["날짜"]}</td>'
+                    html_table += f'<td style="background: {row_bg}; color: #0E0E2C; font-weight: 500; padding: 10px 8px; border: none; border-right: 1px solid #DAE0E3; font-size: 14px; letter-spacing: -0.5px; text-align: center;">{dep_port}</td>'
+                    html_table += f'<td style="background: {row_bg}; color: #0E0E2C; font-weight: 500; padding: 10px 8px; border: none; border-right: 1px solid #DAE0E3; font-size: 14px; letter-spacing: -0.5px; text-align: center;">{arr_port}</td>'
                     
                     for grade_idx, grade in enumerate(existing_grades):
                         confirmed = int(row.get(f'{grade}_확정', 0))
@@ -1533,6 +1581,10 @@ if query_button:
                     df_pass_with_totals['날짜'] = df_pass_with_totals['date_display'] + ' (' + df_pass_with_totals['weekday'] + ')'
                 
                 # 승객 스케줄별로 한 행씩 구성 (공실 포함)
+                # 스케줄별 출발/도착 포트 매핑
+                schedule_dep_port_map = df_schedules.set_index('schedule_id')['departure_port'].to_dict() if 'departure_port' in df_schedules.columns else {}
+                schedule_direction_map = df_schedules.set_index('schedule_id')['direction'].to_dict() if 'direction' in df_schedules.columns else {}
+                
                 pass_result_rows = []
                 for schedule_id in df_schedules.sort_values(['date', 'etd_time'])['schedule_id'].unique():
                     schedule_data = df_pass_with_totals[df_pass_with_totals['schedule_id'] == schedule_id]
@@ -1550,10 +1602,17 @@ if query_button:
                         if total_confirmed == 0 and total_blocked == 0:
                             continue  # 예약 없는 스케줄 숨기기
                     
+                    # 출발/도착 포트 계산
+                    dep_port = schedule_dep_port_map.get(schedule_id, '-')
+                    direction = schedule_direction_map.get(schedule_id, '')
+                    arr_port = second_port if direction == 'E' else (first_port if direction == 'W' else '-')
+                    
                     row = {
                         '날짜': schedule_data['날짜'].iloc[0],
                         'schedule_id': schedule_id,
-                        'date_raw': str(schedule_data['date'].iloc[0])
+                        'date_raw': str(schedule_data['date'].iloc[0]),
+                        'departure_port': dep_port,
+                        'arrival_port': arr_port
                     }
                     
                     for grade in existing_grades:
@@ -1589,7 +1648,8 @@ if query_button:
                     'vessel_name': vessel_name,
                     'room_details': df_all_room_details.to_dict('records'),  # 모달용 데이터
                     'is_seat_based': is_seat_based,  # PSTL/PSGR 좌석 기반 여부
-                    'passenger_analysis': df_passenger_analysis  # 승객 분석 데이터
+                    'passenger_analysis': df_passenger_analysis,  # 승객 분석 데이터
+                    'schedules': df_schedules  # 스케줄 데이터 (생성처별 분석용)
                 }
                 
                 st.success("조회 완료")
@@ -1626,14 +1686,20 @@ if 'query_result' in st.session_state:
     ws = wb.active
     ws.title = '객실'
     current_col = 1
-    ws.cell(1, current_col, 'Date')
+    ws.cell(1, current_col, '날짜')
+    ws.merge_cells(start_row=1, start_column=current_col, end_row=2, end_column=current_col)
+    current_col += 1
+    ws.cell(1, current_col, '출발')
+    ws.merge_cells(start_row=1, start_column=current_col, end_row=2, end_column=current_col)
+    current_col += 1
+    ws.cell(1, current_col, '도착')
     ws.merge_cells(start_row=1, start_column=current_col, end_row=2, end_column=current_col)
     current_col += 1
     for grade in existing_grades:
         ws.cell(1, current_col, grade)
         ws.merge_cells(start_row=1, start_column=current_col, end_row=1, end_column=current_col + 2)
         current_col += 3
-    current_col = 2
+    current_col = 4
     for grade in existing_grades:
         ws.cell(2, current_col, '확정')
         ws.cell(2, current_col + 1, '블록')
@@ -1643,6 +1709,10 @@ if 'query_result' in st.session_state:
         excel_row = row_idx + 3
         current_col = 1
         ws.cell(excel_row, current_col, row['날짜'])
+        current_col += 1
+        ws.cell(excel_row, current_col, row.get('departure_port', '-'))
+        current_col += 1
+        ws.cell(excel_row, current_col, row.get('arrival_port', '-'))
         current_col += 1
         for grade in existing_grades:
             ws.cell(excel_row, current_col, int(row.get(f'{grade}_확정', 0)))
@@ -1699,14 +1769,20 @@ if 'query_result' in st.session_state:
     # 시트 2: 승객
     ws2 = wb.create_sheet(title='승객')
     current_col = 1
-    ws2.cell(1, current_col, 'Date')
+    ws2.cell(1, current_col, '날짜')
+    ws2.merge_cells(start_row=1, start_column=current_col, end_row=2, end_column=current_col)
+    current_col += 1
+    ws2.cell(1, current_col, '출발')
+    ws2.merge_cells(start_row=1, start_column=current_col, end_row=2, end_column=current_col)
+    current_col += 1
+    ws2.cell(1, current_col, '도착')
     ws2.merge_cells(start_row=1, start_column=current_col, end_row=2, end_column=current_col)
     current_col += 1
     for grade in existing_grades:
         ws2.cell(1, current_col, grade)
         ws2.merge_cells(start_row=1, start_column=current_col, end_row=1, end_column=current_col + 2)
         current_col += 3
-    current_col = 2
+    current_col = 4
     for grade in existing_grades:
         ws2.cell(2, current_col, '확정')
         ws2.cell(2, current_col + 1, '블록')
@@ -1716,6 +1792,10 @@ if 'query_result' in st.session_state:
         excel_row = row_idx + 3
         current_col = 1
         ws2.cell(excel_row, current_col, row['날짜'])
+        current_col += 1
+        ws2.cell(excel_row, current_col, row.get('departure_port', '-'))
+        current_col += 1
+        ws2.cell(excel_row, current_col, row.get('arrival_port', '-'))
         current_col += 1
         for grade in existing_grades:
             ws2.cell(excel_row, current_col, int(row.get(f'{grade}_확정', 0)))
@@ -1756,6 +1836,134 @@ if 'query_result' in st.session_state:
     for row_idx in range(3, ws2.max_row + 1):
         ws2.row_dimensions[row_idx].height = 20
     
+    # 시트 3: 생성처별 (국적 기준)
+    ws3 = wb.create_sheet(title='생성처별')
+    df_passenger_analysis = result.get('passenger_analysis', pd.DataFrame())
+    df_schedules_excel = result.get('schedules', pd.DataFrame())
+    
+    if not df_passenger_analysis.empty:
+        # 국적 분류 함수
+        def get_nationality_group_excel(nationality):
+            if pd.isna(nationality) or not nationality:
+                return '기타 국적'
+            nat_upper = str(nationality).upper()
+            if nat_upper == 'KR':
+                return '한국 국적'
+            elif nat_upper == 'JP':
+                return '일본 국적'
+            else:
+                return '기타 국적'
+        
+        df_origin_excel = df_passenger_analysis.copy()
+        df_origin_excel['nationality_group'] = df_origin_excel['nationality'].apply(get_nationality_group_excel)
+        
+        # 도착 포트 계산 - direction 기반으로 통일
+        route_ports_info = route_direction_map.get(selected_route, {'first': '-', 'second': '-'})
+        first_port_excel = route_ports_info.get('first', '-')
+        second_port_excel = route_ports_info.get('second', '-')
+        
+        if not df_schedules_excel.empty and 'direction' in df_schedules_excel.columns:
+            schedule_direction_map_excel = df_schedules_excel.set_index('schedule_id')['direction'].to_dict()
+            df_origin_excel['direction'] = df_origin_excel['schedule_id'].map(schedule_direction_map_excel)
+            
+            df_origin_excel['arrival_port'] = df_origin_excel['direction'].apply(
+                lambda d: second_port_excel if d == 'E' else (first_port_excel if d == 'W' else '-')
+            )
+        else:
+            df_origin_excel['arrival_port'] = '-'
+        
+        # 스케줄+도착포트별 국적 집계
+        if 'arrival_port' in df_origin_excel.columns:
+            origin_summary_excel = df_origin_excel.groupby(['schedule_id', 'arrival_port', 'nationality_group']).size().unstack(fill_value=0).reset_index()
+        else:
+            origin_summary_excel = df_origin_excel.groupby(['schedule_id', 'nationality_group']).size().unstack(fill_value=0).reset_index()
+            origin_summary_excel['arrival_port'] = '-'
+        
+        for col in ['한국 국적', '일본 국적', '기타 국적']:
+            if col not in origin_summary_excel.columns:
+                origin_summary_excel[col] = 0
+        
+        # 스케줄 정보 병합
+        if not df_schedules_excel.empty:
+            schedule_cols_excel = ['schedule_id', 'date', 'time_display', 'departure_port']
+            available_cols_excel = [c for c in schedule_cols_excel if c in df_schedules_excel.columns]
+            schedule_info_excel = df_schedules_excel[available_cols_excel].drop_duplicates()
+            origin_summary_excel = origin_summary_excel.merge(schedule_info_excel, on='schedule_id', how='left')
+            
+            if 'date' in origin_summary_excel.columns:
+                origin_summary_excel['date_display'] = pd.to_datetime(origin_summary_excel['date']).dt.strftime('%m-%d')
+                weekday_map = {0: '월', 1: '화', 2: '수', 3: '목', 4: '금', 5: '토', 6: '일'}
+                origin_summary_excel['weekday'] = pd.to_datetime(origin_summary_excel['date']).dt.dayofweek.map(weekday_map)
+            
+            origin_summary_excel['총계'] = origin_summary_excel['한국 국적'] + origin_summary_excel['일본 국적'] + origin_summary_excel['기타 국적']
+            
+            if 'date' in origin_summary_excel.columns and 'time_display' in origin_summary_excel.columns:
+                origin_summary_excel = origin_summary_excel.sort_values(['date', 'time_display', 'arrival_port'])
+        
+        # 헤더
+        ws3.cell(1, 1, '날짜')
+        ws3.cell(1, 2, '출발')
+        ws3.cell(1, 3, '도착')
+        ws3.cell(1, 4, '한국 국적')
+        ws3.cell(1, 5, '일본 국적')
+        ws3.cell(1, 6, '기타 국적')
+        ws3.cell(1, 7, '총계')
+        
+        for col in range(1, 8):
+            ws3.cell(1, col).fill = header_fill
+            ws3.cell(1, col).font = header_font
+            ws3.cell(1, col).alignment = Alignment(horizontal='center', vertical='center')
+            ws3.cell(1, col).border = thin_border
+        
+        # 데이터
+        for row_idx, row in origin_summary_excel.iterrows():
+            excel_row = row_idx + 2
+            time_str = row.get('time_display', '') or ''
+            date_str = f"{row.get('date_display', '')} {time_str} ({row.get('weekday', '')})"
+            dep_port = row.get('departure_port', '-') or '-'
+            arr_port = row.get('arrival_port', '-') or '-'
+            
+            ws3.cell(excel_row, 1, date_str)
+            ws3.cell(excel_row, 2, dep_port)
+            ws3.cell(excel_row, 3, arr_port)
+            ws3.cell(excel_row, 4, int(row.get('한국 국적', 0)))
+            ws3.cell(excel_row, 5, int(row.get('일본 국적', 0)))
+            ws3.cell(excel_row, 6, int(row.get('기타 국적', 0)))
+            ws3.cell(excel_row, 7, int(row.get('총계', 0)))
+            
+            for col in range(1, 8):
+                ws3.cell(excel_row, col).alignment = Alignment(horizontal='center', vertical='center')
+                ws3.cell(excel_row, col).border = thin_border
+            
+            # 한국: 파란색, 일본: 빨간색
+            ws3.cell(excel_row, 4).font = Font(color='436CFC', bold=True)
+            ws3.cell(excel_row, 5).font = Font(color='EA3336', bold=True)
+            ws3.cell(excel_row, 7).font = Font(bold=True)
+        
+        # 합계 row 추가
+        total_row = len(origin_summary_excel) + 2
+        ws3.cell(total_row, 1, '합계')
+        ws3.merge_cells(start_row=total_row, start_column=1, end_row=total_row, end_column=3)
+        ws3.cell(total_row, 4, int(origin_summary_excel['한국 국적'].sum()))
+        ws3.cell(total_row, 5, int(origin_summary_excel['일본 국적'].sum()))
+        ws3.cell(total_row, 6, int(origin_summary_excel['기타 국적'].sum()))
+        ws3.cell(total_row, 7, int(origin_summary_excel['총계'].sum()))
+        
+        for col in range(1, 8):
+            ws3.cell(total_row, col).fill = header_fill
+            ws3.cell(total_row, col).font = Font(color='FFFFFF', bold=True)
+            ws3.cell(total_row, col).alignment = Alignment(horizontal='center', vertical='center')
+            ws3.cell(total_row, col).border = thin_border
+        
+        ws3.column_dimensions['A'].width = 22
+        ws3.column_dimensions['B'].width = 10
+        ws3.column_dimensions['C'].width = 10
+        ws3.column_dimensions['D'].width = 10
+        ws3.column_dimensions['E'].width = 10
+        ws3.column_dimensions['F'].width = 10
+        ws3.column_dimensions['G'].width = 10
+        ws3.row_dimensions[1].height = 25
+    
     output = io.BytesIO()
     wb.save(output)
     excel_data = output.getvalue()
@@ -1793,27 +2001,66 @@ if 'query_result' in st.session_state:
     
     # 탭 상태 초기화
     if 'selected_tab' not in st.session_state:
-        st.session_state.selected_tab = 0
+        st.session_state.selected_tab = tab1_name
     
-    # 탭 생성
-    tab1, tab2, tab3 = st.tabs([tab1_name, "승객", "📊 승객 분석"])
+    # 탭 옵션
+    tab_options = [tab1_name, "승객", "📊 승객 분석", "📍 생성처별 분석"]
     
-    # JavaScript로 이전에 선택한 탭으로 이동
-    selected_tab_idx = st.session_state.get('selected_tab', 0)
-    if selected_tab_idx > 0:
-        st.components.v1.html(f"""
-            <script>
-                // 탭 클릭 시뮬레이션
-                setTimeout(function() {{
-                    const tabs = window.parent.document.querySelectorAll('[data-baseweb="tab"]');
-                    if (tabs && tabs.length > {selected_tab_idx}) {{
-                        tabs[{selected_tab_idx}].click();
-                    }}
-                }}, 100);
-            </script>
-        """, height=0)
+    # 현재 선택된 탭이 옵션에 없으면 기본값으로
+    if st.session_state.selected_tab not in tab_options:
+        st.session_state.selected_tab = tab1_name
     
-    with tab1:
+    # 선택된 탭 인덱스
+    selected_idx = tab_options.index(st.session_state.selected_tab)
+    
+    # 진짜 st.tabs 표시
+    tab_placeholder = st.tabs(tab_options)
+    
+    # JavaScript로 저장된 탭으로 클릭 + 탭 클릭 감지
+    st.components.v1.html(f"""
+        <script>
+            setTimeout(function() {{
+                // 저장된 탭으로 이동
+                const tabs = window.parent.document.querySelectorAll('[data-baseweb="tab"]');
+                if (tabs && tabs.length > {selected_idx}) {{
+                    tabs[{selected_idx}].click();
+                }}
+                
+                // 탭 클릭 시 숨겨진 버튼 클릭
+                tabs.forEach((tab, idx) => {{
+                    tab.addEventListener('click', function(e) {{
+                        const buttons = window.parent.document.querySelectorAll('button[kind="secondary"]');
+                        // 숨겨진 버튼 찾아서 클릭
+                        buttons.forEach(btn => {{
+                            if (btn.innerText === ['{ tab_options[0] }', '{ tab_options[1] }', '{ tab_options[2] }', '{ tab_options[3] }'][idx]) {{
+                                btn.click();
+                            }}
+                        }});
+                    }});
+                }});
+            }}, 50);
+        </script>
+    """, height=0)
+    
+    # 숨겨진 버튼들 (탭 전환용) - CSS로 숨김
+    st.markdown("""
+        <style>
+        [data-testid="stBaseButton-secondary"] {
+            display: none !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    btn_cols = st.columns(4)
+    for idx, (col, tab_name) in enumerate(zip(btn_cols, tab_options)):
+        with col:
+            if st.button(tab_name, key=f"hidden_tab_btn_{idx}"):
+                st.session_state.selected_tab = tab_name
+                st.rerun()
+    
+    # 현재 선택된 탭
+    selected_tab = st.session_state.selected_tab
+    
+    if selected_tab == tab1_name:
         # 객실 테이블 렌더링 (JavaScript 모달 포함)
         room_data_json = json.dumps(result.get('room_details', []), ensure_ascii=False)
         
@@ -2084,7 +2331,7 @@ if 'query_result' in st.session_state:
         </div>
         """, unsafe_allow_html=True)
                 
-    with tab2:
+    elif selected_tab == "승객":
         # 승객 테이블 생성
         final_df_passengers = result['final_df_passengers']
         existing_grades = result['existing_grades']
@@ -2093,7 +2340,9 @@ if 'query_result' in st.session_state:
         html_pass_table = '<div class="responsive-table-container"><table style="width: 100%; border-collapse: collapse; background: #FFFFFF; font-family: Noto Sans KR, sans-serif;">'
         
         # 헤더 1행: 등급명
-        html_pass_table += '<thead><tr><th rowspan="2" class="sticky-date-header" style="background: #232A5E; color: #FAFCFE; padding: 12px 10px; border: none; border-right: 1px solid #3a4a7e; font-weight: 700; font-size: 12px; letter-spacing: -0.5px;">날짜</th>'
+        html_pass_table += '<thead><tr><th rowspan="2" class="sticky-date-header" style="background: #232A5E; color: #FAFCFE; padding: 12px 10px; border: none; border-right: 1px solid #3a4a7e; font-weight: 700; font-size: 12px; letter-spacing: -0.5px; text-align: center;">날짜</th>'
+        html_pass_table += '<th rowspan="2" style="background: #232A5E; color: #FAFCFE; padding: 12px 8px; border: none; border-right: 1px solid #3a4a7e; font-weight: 700; font-size: 12px; letter-spacing: -0.5px; text-align: center;">출발</th>'
+        html_pass_table += '<th rowspan="2" style="background: #232A5E; color: #FAFCFE; padding: 12px 8px; border: none; border-right: 1px solid #3a4a7e; font-weight: 700; font-size: 12px; letter-spacing: -0.5px; text-align: center;">도착</th>'
         for idx, grade in enumerate(existing_grades):
             if grade == '총계':
                 bg_color = '#1a2148'
@@ -2103,7 +2352,7 @@ if 'query_result' in st.session_state:
             is_last_grade = (idx == len(existing_grades) - 1)
             border_right = '1px solid #3a4a7e' if is_last_grade else '1px solid #3a4a7e'
             
-            html_pass_table += f'<th colspan="3" style="background: {bg_color}; color: #FAFCFE; padding: 12px 10px; border: none; border-right: {border_right}; font-weight: 700; font-size: 12px; letter-spacing: -0.5px;">{grade}</th>'
+            html_pass_table += f'<th colspan="3" style="background: {bg_color}; color: #FAFCFE; padding: 12px 10px; border: none; border-right: {border_right}; font-weight: 700; font-size: 12px; letter-spacing: -0.5px; text-align: center;">{grade}</th>'
         html_pass_table += '</tr>'
         
         # 헤더 2행: 확정/블록/잔여
@@ -2121,9 +2370,13 @@ if 'query_result' in st.session_state:
         html_pass_table += '<tbody>'
         for idx, row in final_df_passengers.iterrows():
             row_bg = '#FFFFFF' if idx % 2 == 0 else '#F9FAFB'
+            dep_port = row.get('departure_port', '-')
+            arr_port = row.get('arrival_port', '-')
             
             html_pass_table += '<tr style="border-bottom: 1px solid #DAE0E3; transition: background 0.15s ease;">'
-            html_pass_table += f'<td class="sticky-date-cell" style="background: {row_bg}; color: #0E0E2C; font-weight: 500; padding: 10px; border: none; border-right: 1px solid #DAE0E3; font-size: 14px; letter-spacing: -0.5px;">{row["날짜"]}</td>'
+            html_pass_table += f'<td class="sticky-date-cell" style="background: {row_bg}; color: #0E0E2C; font-weight: 500; padding: 10px; border: none; border-right: 1px solid #DAE0E3; font-size: 14px; letter-spacing: -0.5px; text-align: center;">{row["날짜"]}</td>'
+            html_pass_table += f'<td style="background: {row_bg}; color: #0E0E2C; font-weight: 500; padding: 10px 8px; border: none; border-right: 1px solid #DAE0E3; font-size: 14px; letter-spacing: -0.5px; text-align: center;">{dep_port}</td>'
+            html_pass_table += f'<td style="background: {row_bg}; color: #0E0E2C; font-weight: 500; padding: 10px 8px; border: none; border-right: 1px solid #DAE0E3; font-size: 14px; letter-spacing: -0.5px; text-align: center;">{arr_port}</td>'
             
             for idx_g, grade in enumerate(existing_grades):
                 confirmed = int(row.get(f'{grade}_확정', 0))
@@ -2177,7 +2430,7 @@ if 'query_result' in st.session_state:
         </div>
         """, unsafe_allow_html=True)
     
-    with tab3:
+    elif selected_tab == "📊 승객 분석":
         # 승객 분석 대시보드
         df_analysis = result.get('passenger_analysis', pd.DataFrame())
         
@@ -2351,9 +2604,10 @@ if 'query_result' in st.session_state:
             with col2:
                 nationality_counts = df_analysis['nationality_name'].value_counts().head(10)
                 
-                # NEOHELIOS 색상 그라데이션 (Primary Blue 기반)
+                # NEOHELIOS 색상 그라데이션 (많을수록 짙게)
                 n_colors = len(nationality_counts)
-                colors = [f'rgba(67, 108, 252, {0.3 + 0.7 * (i / max(n_colors-1, 1))})' for i in range(n_colors)]
+                # 많은 순서대로 짙은 색 (1.0 -> 0.3)
+                colors = [f'rgba(67, 108, 252, {1.0 - 0.7 * (i / max(n_colors-1, 1))})' for i in range(n_colors)]
                 
                 fig_nat = go.Figure(data=[go.Bar(
                     y=nationality_counts.index[::-1],
@@ -2376,10 +2630,9 @@ if 'query_result' in st.session_state:
                         x=0.5
                     ),
                     xaxis=dict(
-                        title='승객 수',
+                        title=dict(text='승객 수', font=dict(family='Noto Sans KR', size=12, color='#88949C')),
                         showgrid=True,
-                        gridcolor='#DAE0E3',
-                        titlefont=dict(family='Noto Sans KR', size=12, color='#88949C')
+                        gridcolor='#DAE0E3'
                     ),
                     yaxis=dict(
                         title='',
@@ -2469,6 +2722,179 @@ if 'query_result' in st.session_state:
                 age_df['비율'] = (age_df['인원'] / age_df['인원'].sum() * 100).round(1).astype(str) + '%'
                 st.dataframe(age_df, hide_index=True, use_container_width=True)
 
-st.markdown('<hr style="border: none; height: 1px; background: #e0e0e0; margin: 40px 0;">', unsafe_allow_html=True)
+    elif selected_tab == "📍 생성처별 분석":
+        # 생성처별 분석 탭
+        df_analysis = result.get('passenger_analysis', pd.DataFrame())
+        df_schedules = result.get('schedules', pd.DataFrame())
+        
+        if df_analysis.empty:
+            st.info("확정된 승객 데이터가 없습니다.")
+        else:
+            # 헤더
+            st.markdown("""
+            <div style="background: #232A5E; padding: 24px; border-radius: 5px; margin-bottom: 24px; font-family: 'Noto Sans KR', sans-serif;">
+                <h2 style="color: #FAFCFE; margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.5px;">
+                    📍 생성처별 분석
+                </h2>
+                <p style="color: #9EA8B0; margin: 8px 0 0 0; font-size: 14px; letter-spacing: -0.5px;">
+                    스케줄별 생성처(한국/일본) 승객 현황
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # 생성처 필터 (K: 한국생성, J: 일본생성)
+            origin_filter_col, _ = st.columns([2, 8])
+            with origin_filter_col:
+                origin_filter_options = ["전체", "한국", "일본"]
+                selected_origin_filter = st.selectbox("생성처", origin_filter_options, index=0, key="origin_filter_tab4")
+            
+            # 생성처 분류 함수
+            def get_origin(ticket_number):
+                if pd.isna(ticket_number) or not ticket_number:
+                    return '기타'
+                first_char = str(ticket_number)[0].upper()
+                if first_char == 'K':
+                    return '한국'
+                elif first_char == 'J':
+                    return '일본'
+                else:
+                    return '기타'
+            
+            # 생성처 컬럼 추가
+            df_origin = df_analysis.copy()
+            if 'ticket_number' in df_origin.columns:
+                df_origin['origin'] = df_origin['ticket_number'].apply(get_origin)
+            else:
+                df_origin['origin'] = '기타'
+            
+            # 생성처 필터 적용 (ticket_number 기반)
+            if selected_origin_filter != "전체":
+                df_origin = df_origin[df_origin['origin'] == selected_origin_filter].copy()
+            
+            # 국적 분류 (nationality 기반)
+            def get_nationality_group(nationality):
+                if pd.isna(nationality) or not nationality:
+                    return '기타 국적'
+                nat_upper = str(nationality).upper()
+                if nat_upper == 'KR':
+                    return '한국 국적'
+                elif nat_upper == 'JP':
+                    return '일본 국적'
+                else:
+                    return '기타 국적'
+            
+            df_origin['nationality_group'] = df_origin['nationality'].apply(get_nationality_group)
+            
+            # 도착 포트 계산 - direction 기반으로 통일 (더 안정적)
+            route_ports_info = route_direction_map.get(selected_route, {'first': '-', 'second': '-'})
+            first_port = route_ports_info.get('first', '-')
+            second_port = route_ports_info.get('second', '-')
+            
+            if not df_schedules.empty and 'direction' in df_schedules.columns:
+                schedule_direction_map = df_schedules.set_index('schedule_id')['direction'].to_dict()
+                df_origin['direction'] = df_origin['schedule_id'].map(schedule_direction_map)
+                
+                # E방향: 첫번째→두번째, W방향: 두번째→첫번째
+                df_origin['arrival_port'] = df_origin['direction'].apply(
+                    lambda d: second_port if d == 'E' else (first_port if d == 'W' else '-')
+                )
+            else:
+                df_origin['arrival_port'] = '-'
+            
+            # 스케줄+도착포트별 국적 집계
+            if 'arrival_port' in df_origin.columns:
+                origin_summary = df_origin.groupby(['schedule_id', 'arrival_port', 'nationality_group']).size().unstack(fill_value=0).reset_index()
+            else:
+                origin_summary = df_origin.groupby(['schedule_id', 'nationality_group']).size().unstack(fill_value=0).reset_index()
+                origin_summary['arrival_port'] = '-'
+            
+            # 컬럼 정리
+            for col in ['한국 국적', '일본 국적', '기타 국적']:
+                if col not in origin_summary.columns:
+                    origin_summary[col] = 0
+            
+            # 스케줄 정보 병합
+            if not df_schedules.empty:
+                schedule_cols = ['schedule_id', 'date', 'time_display', 'departure_port']
+                available_cols = [c for c in schedule_cols if c in df_schedules.columns]
+                schedule_info = df_schedules[available_cols].drop_duplicates()
+                origin_summary = origin_summary.merge(schedule_info, on='schedule_id', how='left')
+                
+                # 날짜 포맷
+                if 'date' in origin_summary.columns:
+                    origin_summary['date_display'] = pd.to_datetime(origin_summary['date']).dt.strftime('%m-%d')
+                    weekday_map = {0: '월', 1: '화', 2: '수', 3: '목', 4: '금', 5: '토', 6: '일'}
+                    origin_summary['weekday'] = pd.to_datetime(origin_summary['date']).dt.dayofweek.map(weekday_map)
+                else:
+                    origin_summary['date_display'] = '-'
+                    origin_summary['weekday'] = '-'
+                
+                # 총계 계산
+                origin_summary['총계'] = origin_summary['한국 국적'] + origin_summary['일본 국적'] + origin_summary['기타 국적']
+                
+                # 정렬
+                if 'date' in origin_summary.columns and 'time_display' in origin_summary.columns:
+                    origin_summary = origin_summary.sort_values(['date', 'time_display', 'arrival_port'])
+                
+                # 테이블 HTML 생성
+                html_origin = '<div class="responsive-table-container"><table style="width: 100%; border-collapse: collapse; background: #FFFFFF; font-family: Noto Sans KR, sans-serif;">'
+                
+                # 헤더
+                html_origin += '''<thead><tr>
+                    <th style="background: #232A5E; color: #FAFCFE; padding: 12px 10px; border: none; border-right: 1px solid #3a4a7e; font-weight: 700; font-size: 12px; text-align: center;">날짜</th>
+                    <th style="background: #232A5E; color: #FAFCFE; padding: 12px 10px; border: none; border-right: 1px solid #3a4a7e; font-weight: 700; font-size: 12px; text-align: center;">출발</th>
+                    <th style="background: #232A5E; color: #FAFCFE; padding: 12px 10px; border: none; border-right: 1px solid #3a4a7e; font-weight: 700; font-size: 12px; text-align: center;">도착</th>
+                    <th style="background: #232A5E; color: #FAFCFE; padding: 12px 10px; border: none; border-right: 1px solid #3a4a7e; font-weight: 700; font-size: 12px; text-align: center;">한국 국적</th>
+                    <th style="background: #232A5E; color: #FAFCFE; padding: 12px 10px; border: none; border-right: 1px solid #3a4a7e; font-weight: 700; font-size: 12px; text-align: center;">일본 국적</th>
+                    <th style="background: #232A5E; color: #FAFCFE; padding: 12px 10px; border: none; border-right: 1px solid #3a4a7e; font-weight: 700; font-size: 12px; text-align: center;">기타 국적</th>
+                    <th style="background: #1a2148; color: #FAFCFE; padding: 12px 10px; border: none; font-weight: 700; font-size: 12px; text-align: center;">총계</th>
+                </tr></thead>'''
+                
+                # 바디
+                html_origin += '<tbody>'
+                row_idx = 0
+                for _, row in origin_summary.iterrows():
+                    row_bg = '#FFFFFF' if row_idx % 2 == 0 else '#F9FAFB'
+                    time_str = row.get('time_display', '') or ''
+                    date_str = f"{row.get('date_display', '')} {time_str} ({row.get('weekday', '')})"
+                    dep_port = row.get('departure_port', '-') or '-'
+                    arr_port = row.get('arrival_port', '-') or '-'
+                    kr_count = int(row.get('한국 국적', 0))
+                    jp_count = int(row.get('일본 국적', 0))
+                    etc_count = int(row.get('기타 국적', 0))
+                    total_count = int(row.get('총계', 0))
+                    
+                    html_origin += f'''<tr style="border-bottom: 1px solid #DAE0E3;">
+                        <td style="background: {row_bg}; color: #0E0E2C; padding: 10px; border-right: 1px solid #DAE0E3; font-size: 14px; text-align: center;">{date_str}</td>
+                        <td style="background: {row_bg}; color: #0E0E2C; padding: 10px; border-right: 1px solid #DAE0E3; font-size: 14px; text-align: center; font-weight: 500;">{dep_port}</td>
+                        <td style="background: {row_bg}; color: #0E0E2C; padding: 10px; border-right: 1px solid #DAE0E3; font-size: 14px; text-align: center; font-weight: 500;">{arr_port}</td>
+                        <td style="background: {row_bg}; color: #436CFC; padding: 10px; border-right: 1px solid #DAE0E3; font-size: 14px; text-align: center; font-weight: 600;">{kr_count}</td>
+                        <td style="background: {row_bg}; color: #EA3336; padding: 10px; border-right: 1px solid #DAE0E3; font-size: 14px; text-align: center; font-weight: 600;">{jp_count}</td>
+                        <td style="background: {row_bg}; color: #88949C; padding: 10px; border-right: 1px solid #DAE0E3; font-size: 14px; text-align: center;">{etc_count}</td>
+                        <td style="background: {row_bg}; color: #232A5E; padding: 10px; font-size: 14px; text-align: center; font-weight: 700;">{total_count}</td>
+                    </tr>'''
+                    row_idx += 1
+                
+                # 합계 row 추가
+                total_kr = origin_summary['한국 국적'].sum()
+                total_jp = origin_summary['일본 국적'].sum()
+                total_etc = origin_summary['기타 국적'].sum()
+                total_all = total_kr + total_jp + total_etc
+                
+                html_origin += f'''<tr style="border-top: 2px solid #232A5E; background: #F3F6FF;">
+                    <td colspan="3" style="background: #232A5E; color: #FAFCFE; padding: 12px 10px; border-right: 1px solid #3a4a7e; font-size: 14px; text-align: center; font-weight: 700;">합계</td>
+                    <td style="background: #F3F6FF; color: #436CFC; padding: 12px 10px; border-right: 1px solid #DAE0E3; font-size: 14px; text-align: center; font-weight: 700;">{total_kr}</td>
+                    <td style="background: #F3F6FF; color: #EA3336; padding: 12px 10px; border-right: 1px solid #DAE0E3; font-size: 14px; text-align: center; font-weight: 700;">{total_jp}</td>
+                    <td style="background: #F3F6FF; color: #88949C; padding: 12px 10px; border-right: 1px solid #DAE0E3; font-size: 14px; text-align: center; font-weight: 600;">{total_etc}</td>
+                    <td style="background: #232A5E; color: #FAFCFE; padding: 12px 10px; font-size: 14px; text-align: center; font-weight: 700;">{total_all}</td>
+                </tr>'''
+                
+                html_origin += '</tbody></table></div>'
+                
+                st.markdown(html_origin, unsafe_allow_html=True)
+            else:
+                st.warning("스케줄 정보를 찾을 수 없습니다.")
+
+st.markdown('<hr style="border: none; height: 1px; background: #DAE0E3; margin: 40px 0;">', unsafe_allow_html=True)
 st.markdown('<p style="text-align: center; color: #999999; font-size: 12px;">문제가 있으면 DB 접속 정보를 확인하세요</p>', unsafe_allow_html=True)
 
