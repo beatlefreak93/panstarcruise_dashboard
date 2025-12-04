@@ -19,7 +19,7 @@ st.set_page_config(page_title="객실 현황 대시보드", layout="wide", initi
 
 # DB 설정
 try:
-DB_CONFIG = {
+    DB_CONFIG = {
         'server': st.secrets["database"]["server"],
         'base_database': st.secrets["database"]["base_database"],
         'cruise_database': st.secrets["database"]["cruise_database"],
@@ -796,24 +796,24 @@ if query_button:
             
             if is_tsl:
                 # TSL: 모든 스케줄 가져오기 (port 정보 포함)
-            schedule_query = f"""
-                SELECT 
-                    cs.id AS schedule_id,
-                    CONVERT(VARCHAR, cs.etd, 23) AS etd_date,
+                schedule_query = f"""
+                    SELECT 
+                        cs.id AS schedule_id,
+                        CONVERT(VARCHAR, cs.etd, 23) AS etd_date,
                         CONVERT(VARCHAR, cs.etd, 108) AS etd_time,
                         voy.route_id,
                         voy.direction,
                         ps.port_id AS departure_port_id
-                FROM coastal_schedules cs
-                LEFT JOIN proforma_schedules ps ON cs.proforma_schedule_id = ps.id
-                LEFT JOIN voyages voy ON ps.voyage_id = voy.id
-                WHERE voy.route_id = {selected_route_id}
-                  AND CAST(cs.etd AS DATE) BETWEEN '{start_date}' AND '{end_date}'
-                  AND cs.deleted_at IS NULL
-                  AND cs.is_cruise_available = 1
-                ORDER BY cs.etd
-            """
-            df_schedules = pd.read_sql(schedule_query, conn_base)
+                    FROM coastal_schedules cs
+                    LEFT JOIN proforma_schedules ps ON cs.proforma_schedule_id = ps.id
+                    LEFT JOIN voyages voy ON ps.voyage_id = voy.id
+                    WHERE voy.route_id = {selected_route_id}
+                      AND CAST(cs.etd AS DATE) BETWEEN '{start_date}' AND '{end_date}'
+                      AND cs.deleted_at IS NULL
+                      AND cs.is_cruise_available = 1
+                    ORDER BY cs.etd
+                """
+                df_schedules = pd.read_sql(schedule_query, conn_base)
             else:
                 # 기타 항로: direction으로 필터링
                 for direction in directions:
@@ -960,46 +960,46 @@ if query_button:
                     """
                 else:
                     # PSMC: 객실 기반 - on_boarding_room_id로 객실 연결
-                booking_query = f"""
-                    WITH room_status AS (
-                        SELECT 
-                            t.departure_schedule_id,
-                            t.on_boarding_room_id,
-                            g.code AS grade,
-                            MAX(CASE 
-                                WHEN t.is_temporary = 0 
-                                     AND t.status NOT LIKE 'REFUND%'
-                                THEN 1 
-                                ELSE 0 
-                            END) AS has_confirmed,
-                            MAX(CASE 
-                                WHEN t.is_temporary = 1 
-                                     AND t.status NOT LIKE 'REFUND%'
-                                THEN 1 
-                                ELSE 0 
-                            END) AS has_blocked
-                        FROM tickets t
-                        INNER JOIN rooms r ON t.on_boarding_room_id = r.id
-                        INNER JOIN grades g ON r.grade_id = g.id
+                    booking_query = f"""
+                        WITH room_status AS (
+                            SELECT 
+                                t.departure_schedule_id,
+                                t.on_boarding_room_id,
+                                g.code AS grade,
+                                MAX(CASE 
+                                    WHEN t.is_temporary = 0 
+                                         AND t.status NOT LIKE 'REFUND%'
+                                    THEN 1 
+                                    ELSE 0 
+                                END) AS has_confirmed,
+                                MAX(CASE 
+                                    WHEN t.is_temporary = 1 
+                                         AND t.status NOT LIKE 'REFUND%'
+                                    THEN 1 
+                                    ELSE 0 
+                                END) AS has_blocked
+                            FROM tickets t
+                            INNER JOIN rooms r ON t.on_boarding_room_id = r.id
+                            INNER JOIN grades g ON r.grade_id = g.id
                             {tsl_arrival_join}
-                        WHERE t.departure_schedule_id IN ({schedule_ids})
-                          AND t.deleted_at IS NULL
-                          AND r.deleted_at IS NULL
-                          AND g.deleted_at IS NULL
-                          AND t.on_boarding_room_id IS NOT NULL
-                          AND t.status NOT LIKE 'REFUND%'
+                            WHERE t.departure_schedule_id IN ({schedule_ids})
+                              AND t.deleted_at IS NULL
+                              AND r.deleted_at IS NULL
+                              AND g.deleted_at IS NULL
+                              AND t.on_boarding_room_id IS NOT NULL
+                              AND t.status NOT LIKE 'REFUND%'
                               {tsl_arrival_filter}
-                        GROUP BY t.departure_schedule_id, t.on_boarding_room_id, g.code
-                    )
-                    SELECT 
-                        departure_schedule_id AS schedule_id,
-                        grade,
-                        COUNT(CASE WHEN has_confirmed = 1 THEN 1 END) AS confirmed_rooms,
-                        COUNT(CASE WHEN has_confirmed = 0 AND has_blocked = 1 THEN 1 END) AS blocked_rooms
-                    FROM room_status
-                    WHERE grade IS NOT NULL
-                    GROUP BY departure_schedule_id, grade
-                """
+                            GROUP BY t.departure_schedule_id, t.on_boarding_room_id, g.code
+                        )
+                        SELECT 
+                            departure_schedule_id AS schedule_id,
+                            grade,
+                            COUNT(CASE WHEN has_confirmed = 1 THEN 1 END) AS confirmed_rooms,
+                            COUNT(CASE WHEN has_confirmed = 0 AND has_blocked = 1 THEN 1 END) AS blocked_rooms
+                        FROM room_status
+                        WHERE grade IS NOT NULL
+                        GROUP BY departure_schedule_id, grade
+                    """
                 df_bookings = pd.read_sql(booking_query, conn_cruise)
                 
                 # 3-1. 승객 수 조회 (티켓 수 기반)
@@ -1279,7 +1279,7 @@ if query_button:
                     df_with_totals['날짜'] = df_with_totals['date_display'] + ' ' + df_with_totals['time_display'] + ' (' + df_with_totals['weekday'] + ')'
                 else:
                     # 기존 방식 (날짜만)
-                df_with_totals['날짜'] = df_with_totals['date_display'] + ' (' + df_with_totals['weekday'] + ')'
+                    df_with_totals['날짜'] = df_with_totals['date_display'] + ' (' + df_with_totals['weekday'] + ')'
                 
                 # 8. 등급 순서 정의 (선박/항로별로 다름)
                 # PSMC (route 1-4): OR, PR, RS, BS, OC, IC, DA
@@ -1414,7 +1414,7 @@ if query_button:
                             if is_seat_based:
                                 blocked_link = str(blocked)
                                 vacant_link = str(vacant)
-                        else:
+                            else:
                                 blocked_link = f'<span onclick="openRoomModal({schedule_id}, \'{date_display}\', \'{grade}\', \'blocked\')" style="cursor: pointer; display: block;" title="클릭하여 상세보기">{blocked}</span>'
                                 vacant_link = f'<span onclick="openRoomModal({schedule_id}, \'{date_display}\', \'{grade}\', \'vacant\')" style="cursor: pointer; display: block;" title="클릭하여 상세보기">{vacant}</span>'
                             cell_class = 'class="clickable-cell"'
@@ -1721,7 +1721,7 @@ if 'query_result' in st.session_state:
     excel_data = output.getvalue()
     
     # 탭 + 엑셀 버튼을 같은 줄에 배치 (CSS로 조정)
-                st.markdown("""
+    st.markdown("""
     <style>
     .tab-header-container {
         display: flex;
