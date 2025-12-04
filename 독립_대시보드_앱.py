@@ -19,7 +19,7 @@ st.set_page_config(page_title="객실 현황 대시보드", layout="wide", initi
 
 # DB 설정
 try:
-    DB_CONFIG = {
+DB_CONFIG = {
         'server': st.secrets["database"]["server"],
         'base_database': st.secrets["database"]["base_database"],
         'cruise_database': st.secrets["database"]["cruise_database"],
@@ -796,24 +796,24 @@ if query_button:
             
             if is_tsl:
                 # TSL: 모든 스케줄 가져오기 (port 정보 포함)
-                schedule_query = f"""
-                    SELECT 
-                        cs.id AS schedule_id,
-                        CONVERT(VARCHAR, cs.etd, 23) AS etd_date,
+            schedule_query = f"""
+                SELECT 
+                    cs.id AS schedule_id,
+                    CONVERT(VARCHAR, cs.etd, 23) AS etd_date,
                         CONVERT(VARCHAR, cs.etd, 108) AS etd_time,
                         voy.route_id,
                         voy.direction,
                         ps.port_id AS departure_port_id
-                    FROM coastal_schedules cs
-                    LEFT JOIN proforma_schedules ps ON cs.proforma_schedule_id = ps.id
-                    LEFT JOIN voyages voy ON ps.voyage_id = voy.id
-                    WHERE voy.route_id = {selected_route_id}
-                      AND CAST(cs.etd AS DATE) BETWEEN '{start_date}' AND '{end_date}'
-                      AND cs.deleted_at IS NULL
-                      AND cs.is_cruise_available = 1
-                    ORDER BY cs.etd
-                """
-                df_schedules = pd.read_sql(schedule_query, conn_base)
+                FROM coastal_schedules cs
+                LEFT JOIN proforma_schedules ps ON cs.proforma_schedule_id = ps.id
+                LEFT JOIN voyages voy ON ps.voyage_id = voy.id
+                WHERE voy.route_id = {selected_route_id}
+                  AND CAST(cs.etd AS DATE) BETWEEN '{start_date}' AND '{end_date}'
+                  AND cs.deleted_at IS NULL
+                  AND cs.is_cruise_available = 1
+                ORDER BY cs.etd
+            """
+            df_schedules = pd.read_sql(schedule_query, conn_base)
             else:
                 # 기타 항로: direction으로 필터링
                 for direction in directions:
