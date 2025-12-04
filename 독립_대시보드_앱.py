@@ -2042,11 +2042,19 @@ if 'query_result' in st.session_state:
         </script>
     """, height=0)
     
-    # 숨겨진 버튼들 (탭 전환용) - CSS로 숨김
+    # 숨겨진 버튼들 (탭 전환용) - CSS로 화면 밖으로 이동
     st.markdown("""
         <style>
-        [data-testid="stBaseButton-secondary"] {
-            display: none !important;
+        /* 숨겨진 탭 버튼들 - 여러 선택자로 확실히 숨김 */
+        div[data-testid="column"] button[kind="secondary"],
+        button[kind="secondary"][data-testid="stBaseButton-secondary"],
+        .stButton > button[kind="secondary"],
+        div.row-widget button[kind="secondary"] {
+            position: absolute !important;
+            left: -9999px !important;
+            width: 1px !important;
+            height: 1px !important;
+            overflow: hidden !important;
         }
         </style>
     """, unsafe_allow_html=True)
