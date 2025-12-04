@@ -2042,28 +2042,33 @@ if 'query_result' in st.session_state:
         </script>
     """, height=0)
     
-    # 숨겨진 버튼들 (탭 전환용) - CSS로 화면 밖으로 이동
-    st.markdown("""
-        <style>
-        /* 숨겨진 탭 버튼들 - 여러 선택자로 확실히 숨김 */
-        div[data-testid="column"] button[kind="secondary"],
-        button[kind="secondary"][data-testid="stBaseButton-secondary"],
-        .stButton > button[kind="secondary"],
-        div.row-widget button[kind="secondary"] {
-            position: absolute !important;
-            left: -9999px !important;
-            width: 1px !important;
-            height: 1px !important;
-            overflow: hidden !important;
-        }
-        </style>
-    """, unsafe_allow_html=True)
+    # 숨겨진 버튼들 (탭 전환용)
     btn_cols = st.columns(4)
     for idx, (col, tab_name) in enumerate(zip(btn_cols, tab_options)):
         with col:
             if st.button(tab_name, key=f"hidden_tab_btn_{idx}"):
                 st.session_state.selected_tab = tab_name
                 st.rerun()
+    
+    # JavaScript로 탭 버튼만 숨기기 (텍스트 기반)
+    st.components.v1.html(f"""
+        <script>
+            setTimeout(function() {{
+                const tabTexts = {tab_options};
+                const buttons = window.parent.document.querySelectorAll('button');
+                buttons.forEach(btn => {{
+                    const text = btn.innerText.trim();
+                    if (tabTexts.includes(text)) {{
+                        btn.style.position = 'absolute';
+                        btn.style.left = '-9999px';
+                        btn.style.width = '1px';
+                        btn.style.height = '1px';
+                        btn.style.overflow = 'hidden';
+                    }}
+                }});
+            }}, 100);
+        </script>
+    """, height=0)
     
     # 현재 선택된 탭
     selected_tab = st.session_state.selected_tab
