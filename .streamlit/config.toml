@@ -10,7 +10,20 @@ headless = true
 port = 8501
 enableCORS = false
 enableXsrfProtection = true
+# 연결 안정성 개선
+maxUploadSize = 200
+maxMessageSize = 200
+enableWebsocketCompression = true
 
+[browser]
+# 서버 연결 타임아웃 (초)
+serverAddress = "localhost"
+gatherUsageStats = false
 
+[runner]
+# 스크립트 재실행 최적화
+fastReruns = true
 
-
+[client]
+# 툴바 숨김 (불필요한 UI 제거)
+toolbarMode = "minimal"
