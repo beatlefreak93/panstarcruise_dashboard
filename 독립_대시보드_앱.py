@@ -2488,7 +2488,8 @@ if 'query_result' in st.session_state:
             
             # 연령 계산 (birth_day가 있는 경우만)
             df_analysis = df_analysis.dropna(subset=['birth_day'])
-            df_analysis['birth_day'] = pd.to_datetime(df_analysis['birth_day'])
+            df_analysis['birth_day'] = pd.to_datetime(df_analysis['birth_day'], errors='coerce')
+            df_analysis = df_analysis.dropna(subset=['birth_day'])  # 잘못된 날짜 제거
             df_analysis['age'] = df_analysis['birth_day'].apply(
                 lambda x: (today - x).days // 365 if pd.notna(x) else None
             )
